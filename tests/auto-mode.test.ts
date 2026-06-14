@@ -1,16 +1,20 @@
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import os from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
 	DEFAULT_ALLOW,
+	DEFAULT_PROTECTED_PATHS,
 	DEFAULT_SOFT_DENY,
 	buildEffectiveConfigFromSources,
 	createPiAutomode,
 	deterministicHardDeny,
-	validateSettingsFile,
 	matchesToolPattern,
 	parseClassifierDecision,
 	parseToolPattern,
+	validateSettingsFile,
 	type ClassificationDecision,
 	type EffectiveConfig,
 } from "../extensions/auto-mode.ts";
@@ -106,6 +110,7 @@ function baseConfig(overrides: Partial<EffectiveConfig> = {}): EffectiveConfig {
 		maxTranscriptLines: 80,
 		environment: [],
 		allow: [],
+		protectedPaths: [...DEFAULT_PROTECTED_PATHS],
 		softDeny: [],
 		hardDeny: [],
 		permissionDeny: [],
@@ -365,4 +370,145 @@ test("tool_call hook blocks classifier-needed actions when no classifier is avai
 
 	assert.equal(result.block, true);
 	assert.match(result.reason ?? "", /No classifier model/);
+});
+
+test("write to protected path goes to classifier", async () => {
+	const harness = await setupHookTest({
+		config: baseConfig(),
+		classifier: async () => ({ decision: "allow", tier: "allow", reason: "approved" }),
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "write",
+		input: { path: ".gitignore", content: "node_modules/" },
+	}, harness.ctx);
+
+	assert.equal(result, undefined);
+	assert.equal(harness.classifierCalls, 1);
+});
+
+test("write to protected path blocked by classifier", async () => {
+	const harness = await setupHookTest({
+		config: baseConfig(),
+		classifier: async () => ({ decision: "block", tier: "soft_deny", reason: "no" }),
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "write",
+		input: { path: ".vscode/settings.json", content: "{}" },
+	}, harness.ctx) as { block?: boolean; reason?: string };
+
+	assert.equal(result.block, true);
+	assert.match(result.reason ?? "", /no/);
+	assert.equal(harness.classifierCalls, 1);
+});
+
+test("edit to protected path goes to classifier", async () => {
+	const harness = await setupHookTest({
+		config: baseConfig(),
+		classifier: async () => ({ decision: "allow", tier: "allow", reason: "ok" }),
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "edit",
+		input: { path: ".bashrc", oldText: "old", newText: "new" },
+	}, harness.ctx);
+
+	assert.equal(result, undefined);
+	assert.equal(harness.classifierCalls, 1);
+});
+
+test("read-only tools bypass protected path check", async () => {
+	const harness = await setupHookTest();
+
+	const result = await harness.emit("tool_call", {
+		toolName: "read",
+		input: { path: ".git/config" },
+	}, harness.ctx);
+
+	assert.equal(result, undefined);
+	assert.equal(harness.classifierCalls, 0);
+});
+
+test("write to unprotected path bypasses protected path check", async () => {
+	const harness = await setupHookTest({
+		classifier: async () => ({ decision: "allow", tier: "allow", reason: "ok" }),
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "write",
+		input: { path: "src/index.ts", content: "const x = 1;" },
+	}, harness.ctx);
+
+	assert.equal(result, undefined);
+	assert.equal(harness.classifierCalls, 1);
+});
+
+test("protected paths config can extend defaults", () => {
+	const config = buildEffectiveConfigFromSources({
+		projectLocalSettings: [
+			{ autoMode: { protectedPaths: ["$defaults", ".my-config-dir"] } },
+		],
+	});
+
+	assert.equal(config.protectedPaths.includes(".my-config-dir"), true);
+	assert.equal(DEFAULT_PROTECTED_PATHS.every((p) => config.protectedPaths.includes(p)), true);
+});
+
+test("protected paths config can replace defaults", () => {
+	const config = buildEffectiveConfigFromSources({
+		projectLocalSettings: [
+			{ autoMode: { protectedPaths: ["only-this-dir"] } },
+		],
+	});
+
+	assert.deepEqual(config.protectedPaths, ["only-this-dir"]);
+});
+
+test("write through symlink to protected path triggers classifier", async () => {
+	const tmpDir = mkdtempSync(join(os.tmpdir(), "pi-automode-test-"));
+	try {
+		mkdirSync(join(tmpDir, ".git"));
+		symlinkSync(".git", join(tmpDir, "not-git"));
+
+		const harness = await setupHookTest({
+			ctx: createFakeCtx([], { cwd: tmpDir }),
+			classifier: async () => ({ decision: "block", tier: "soft_deny", reason: "no writes to git via symlink" }),
+		});
+
+		const result = await harness.emit("tool_call", {
+			toolName: "write",
+			input: { path: join(tmpDir, "not-git/config"), content: "[core]" },
+		}, harness.ctx) as { block?: boolean; reason?: string };
+
+		assert.equal(result.block, true);
+		assert.equal(harness.classifierCalls, 1);
+	} finally {
+		rmSync(tmpDir, { recursive: true, force: true });
+	}
+});
+
+test("cross-project write to protected path triggers classifier", async () => {
+	const projectA = mkdtempSync(join(os.tmpdir(), "pi-automode-a-"));
+	const projectB = mkdtempSync(join(os.tmpdir(), "pi-automode-b-"));
+	try {
+		mkdirSync(join(projectB, ".git"));
+
+		const harness = await setupHookTest({
+			ctx: createFakeCtx([], { cwd: projectA }),
+			classifier: async () => ({ decision: "block", tier: "soft_deny", reason: "cross-project .git write" }),
+		});
+
+		// Write to ../project-b/.git/config from project-a
+		const result = await harness.emit("tool_call", {
+			toolName: "write",
+			input: { path: join(projectB, ".git/config"), content: "[core]" },
+		}, harness.ctx) as { block?: boolean; reason?: string };
+
+		assert.equal(result.block, true);
+		assert.equal(harness.classifierCalls, 1);
+	} finally {
+		rmSync(projectA, { recursive: true, force: true });
+		rmSync(projectB, { recursive: true, force: true });
+	}
 });

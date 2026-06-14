@@ -66,6 +66,7 @@ Example:
       "Trusted internal domains: *.corp.example.com"
     ],
     "allow": ["$defaults"],
+    "protectedPaths": ["$defaults"],
     "soft_deny": ["$defaults"],
     "hard_deny": [
       "$defaults",
@@ -105,6 +106,16 @@ Example:
 - bootstrapping language/toolchain installers from official sources
 
 These are exceptions to `soft_deny`, not to `hard_deny`.
+
+#### `protectedPaths`
+
+`$defaults` expands to paths where writes are never auto-approved — they always go to the classifier, regardless of `allow` rules. This matches Claude Code's protected-paths behavior.
+
+Protected directories: `.git`, `.config/git`, `.vscode`, `.idea`, `.husky`, `.cargo`, `.devcontainer`, `.yarn`, `.mvn`, `.pi`.
+
+Protected files: `.gitconfig`, `.gitmodules`, `.gitignore`, `.gitattributes`, shell profiles (`.bashrc`, `.zshrc`, `.profile`, etc.), `.envrc`, package manager configs (`.npmrc`, `.yarnrc`, `.yarnrc.yml`, `.pnp.cjs`, `bunfig.toml`, etc.), Bazel configs (`.bazelrc`, `.bazelversion`, `.bazeliskrc`), hook configs (`.pre-commit-config.yaml`, `lefthook.yml`), Gradle/Maven wrappers, `.devcontainer.json`, `.ripgreprc`, `pyrightconfig.json`, `.mcp.json`.
+
+Read-only tools (`read`, `grep`, `find`, `ls`) bypass this check — reads to protected paths are always allowed. Only `write` and `edit` are affected.
 
 #### `soft_deny`
 
@@ -167,7 +178,7 @@ If you omit `$defaults`, you replace the built-ins for that section:
 }
 ```
 
-That means: use only that one `allow` entry. The built-in `allow` entries are not used. Replacing `allow` does not replace `soft_deny`, `hard_deny`, or `environment`.
+That means: use only that one `allow` entry. The built-in `allow` entries are not used. Replacing `allow` does not replace `soft_deny`, `hard_deny`, `protectedPaths`, or `environment`.
 
 `$defaults` is not used in `permissions.deny` or `permissions.ask`. Those lists contain only explicit Pi tool patterns.
 
@@ -190,6 +201,8 @@ The extension blocks these before any allow or classifier decision:
 
 Read-only Pi tools (`read`, `grep`, `find`, `ls`) are allowed after those checks.
 
+Writes to [protected paths](#protectedpaths) (shell profiles, tool configs, `.git`, `.vscode`, `.pi`, etc.) always go to the classifier, even if an `allow` rule matches. The classifier decides whether to permit the write.
+
 Everything else goes to the classifier. If the classifier is missing, fails, or returns invalid JSON, the action is blocked.
 
 ## Examples
@@ -204,7 +217,7 @@ npm test
 npm pack --dry-run
 ```
 
-The tests cover the risky parts: scoped permission matching, config-source precedence, `$defaults` behavior, config diagnostics, deterministic hard-deny checks, shell parsing for risky bash fragments, classifier JSON parsing, hook-level blocking/allowing, and classifier mocking.
+The tests cover the risky parts: scoped permission matching, config-source precedence, `$defaults` behavior, config diagnostics, deterministic hard-deny checks, shell parsing for risky bash fragments, classifier JSON parsing, hook-level blocking/allowing, classifier mocking, and protected-path enforcement.
 
 ## Known limits
 

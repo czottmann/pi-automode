@@ -3,9 +3,9 @@ import type { AssistantMessage, Model, UserMessage } from "@earendil-works/pi-ai
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Container, Input, SelectList, Text, fuzzyFilter, matchesKey } from "@earendil-works/pi-tui";
 import type { SelectItem } from "@earendil-works/pi-tui";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import os from "node:os";
-import { basename, isAbsolute, normalize, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, normalize, relative, resolve } from "node:path";
 
 /**
  * Claude Code-style auto mode for Pi.
@@ -15,6 +15,58 @@ import { basename, isAbsolute, normalize, relative, resolve } from "node:path";
  * Only then do read-only tools pass, and all remaining tools go through the classifier.
  */
 const HOME = os.homedir();
+/** Built-in protected paths. Writes to these go to the classifier regardless of allow rules. */
+export const DEFAULT_PROTECTED_PATHS = [
+  ".git",
+  ".config/git",
+  ".vscode",
+  ".idea",
+  ".husky",
+  ".cargo",
+  ".devcontainer",
+  ".yarn",
+  ".mvn",
+  ".pi",
+  ".gitconfig",
+  ".gitmodules",
+  ".gitignore",
+  ".gitattributes",
+  ".bashrc",
+  ".bash_profile",
+  ".bash_login",
+  ".bash_aliases",
+  ".bash_logout",
+  ".zshrc",
+  ".zprofile",
+  ".zshenv",
+  ".zlogin",
+  ".zlogout",
+  ".profile",
+  ".envrc",
+  ".npmrc",
+  ".yarnrc",
+  ".yarnrc.yml",
+  ".pnp.cjs",
+  ".pnp.loader.mjs",
+  ".pnpmfile.cjs",
+  "bunfig.toml",
+  ".bunfig.toml",
+  ".bazelrc",
+  ".bazelversion",
+  ".bazeliskrc",
+  ".pre-commit-config.yaml",
+  "lefthook.yml",
+  "lefthook.yaml",
+  ".lefthook.yml",
+  ".lefthook.yaml",
+  "gradle-wrapper.properties",
+  "maven-wrapper.properties",
+  ".devcontainer.json",
+  ".ripgreprc",
+  "pyrightconfig.json",
+  ".mcp.json",
+];
+
 const DEFAULT_MAX_TRANSCRIPT_LINES = 80;
 const DENIAL_HISTORY_LIMIT = 12;
 
@@ -24,6 +76,7 @@ export type AutoModeSettings = {
   maxTranscriptLines?: number;
   environment?: unknown;
   allow?: unknown;
+  protectedPaths?: unknown;
   soft_deny?: unknown;
   softDeny?: unknown;
   hard_deny?: unknown;
@@ -56,6 +109,7 @@ export type EffectiveConfig = {
   maxTranscriptLines: number;
   environment: string[];
   allow: string[];
+  protectedPaths: string[];
   softDeny: string[];
   hardDeny: string[];
   permissionDeny: ToolPattern[];
@@ -281,6 +335,7 @@ export function validateSettingsFile(
         "maxTranscriptLines",
         "environment",
         "allow",
+        "protectedPaths",
         "soft_deny",
         "softDeny",
         "hard_deny",
@@ -317,6 +372,12 @@ export function validateSettingsFile(
         autoMode.allow,
         source,
         "autoMode.allow",
+        diagnostics,
+      );
+      validateStringArraySetting(
+        autoMode.protectedPaths,
+        source,
+        "autoMode.protectedPaths",
         diagnostics,
       );
       validateStringArraySetting(
@@ -483,6 +544,7 @@ export function buildEffectiveConfigFromSources(
     maxTranscriptLines: DEFAULT_MAX_TRANSCRIPT_LINES,
     environment: [...DEFAULT_ENVIRONMENT],
     allow: [...DEFAULT_ALLOW],
+    protectedPaths: [...DEFAULT_PROTECTED_PATHS],
     softDeny: [...DEFAULT_SOFT_DENY],
     hardDeny: [...DEFAULT_HARD_DENY],
     permissionDeny: [],
@@ -501,6 +563,7 @@ export function buildEffectiveConfigFromSources(
   ];
   const environment = createRuleAccumulator(DEFAULT_ENVIRONMENT);
   const allow = createRuleAccumulator(DEFAULT_ALLOW);
+  const protectedPaths = createRuleAccumulator(DEFAULT_PROTECTED_PATHS);
   const softDeny = createRuleAccumulator(DEFAULT_SOFT_DENY);
   const hardDeny = createRuleAccumulator(DEFAULT_HARD_DENY);
 
@@ -508,6 +571,7 @@ export function buildEffectiveConfigFromSources(
     config = applyAutoModeScalars(config, settings.autoMode);
     applyRuleSetting(environment, settings.autoMode?.environment);
     applyRuleSetting(allow, settings.autoMode?.allow);
+    applyRuleSetting(protectedPaths, settings.autoMode?.protectedPaths);
     applyRuleSetting(
       softDeny,
       settings.autoMode?.soft_deny ?? settings.autoMode?.softDeny,
@@ -522,6 +586,7 @@ export function buildEffectiveConfigFromSources(
     ...config,
     environment: finalizeRuleSetting(environment),
     allow: finalizeRuleSetting(allow),
+    protectedPaths: finalizeRuleSetting(protectedPaths),
     softDeny: finalizeRuleSetting(softDeny),
     hardDeny: finalizeRuleSetting(hardDeny),
   };
@@ -677,6 +742,57 @@ function normalizePathForMatch(path: string, cwd: string): string {
 function isInside(child: string, parent: string): boolean {
   const rel = relative(parent, child);
   return rel === "" || (!!rel && !rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function isProtectedPath(path: string, cwd: string, protectedPaths: string[]): boolean {
+  // Resolve symlinks so writes through symlinks (e.g. not-git -> .git) are caught.
+  let resolved = path;
+  try {
+    resolved = realpathSync(path);
+  } catch {
+    // File doesn't exist yet — try resolving the parent directory.
+    try {
+      const dir = dirname(path);
+      const base = basename(path);
+      resolved = join(realpathSync(dir), base);
+    } catch {
+      // Parent doesn't exist either — fall through with raw path.
+    }
+  }
+
+  // For paths inside the project: use relative path for matching.
+  if (resolved.startsWith(cwd)) {
+    const relativePath = relative(cwd, resolved);
+    for (const pattern of protectedPaths) {
+      if (
+        relativePath === pattern ||
+        relativePath.startsWith(`${pattern}/`)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // For paths outside the project: check every path component suffix.
+  // This catches writes like ../other-project/.git/config even when cwd
+  // doesn't contain the target.
+  //
+  // e.g. /Users/x/other-project/.git/config  →  segments ["Users", "x", "other-project", ".git", "config"]
+  //      check ".git/config" against ".git"    →  ".git/config".startsWith(".git/")  →  match
+  const segments = resolved.split("/").filter(Boolean);
+  for (let i = 0; i < segments.length; i++) {
+    const suffix = segments.slice(i).join("/");
+    for (const pattern of protectedPaths) {
+      if (
+        suffix === pattern ||
+        suffix.startsWith(`${pattern}/`)
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function isSafetyControlPath(path: string, cwd: string): boolean {
@@ -1649,6 +1765,28 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
         return undefined;
       }
 
+      // Protected paths go to the classifier regardless of allow rules.
+      if (event.toolName === "write" || event.toolName === "edit") {
+        const path = resolveInputPath(ctx.cwd, input.path);
+        if (path && isProtectedPath(path, ctx.cwd, cfg.protectedPaths)) {
+          const decision = await classify(ctx, cfg, summary, loadedContext);
+          if (decision.decision === "allow") {
+            state.lastDecision = "allow";
+            state.lastReason = decision.reason;
+            persist();
+            updateUi(ctx);
+            return undefined;
+          }
+          return block(ctx, {
+            timestamp: Date.now(),
+            toolName: event.toolName,
+            reason: decision.reason,
+            action: summary,
+            kind: "classifier",
+          });
+        }
+      }
+
       const decision = await classify(ctx, cfg, summary, loadedContext);
       if (decision.decision === "allow") {
         state.lastDecision = "allow";
@@ -1726,6 +1864,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
             {
               environment: DEFAULT_ENVIRONMENT,
               allow: DEFAULT_ALLOW,
+              protectedPaths: DEFAULT_PROTECTED_PATHS,
               soft_deny: DEFAULT_SOFT_DENY,
               hard_deny: DEFAULT_HARD_DENY,
             },
