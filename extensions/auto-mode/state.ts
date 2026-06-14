@@ -10,22 +10,32 @@ export function pushDenial(state: AutoModeState, denial: DenialRecord): void {
   ];
 }
 
-export function statusLine(config: EffectiveConfig, state: AutoModeState): string {
+export function statusLine(
+  config: EffectiveConfig,
+  state: AutoModeState,
+): string {
   const enabled = state.enabledOverride ?? config.enabled;
   if (!enabled) return "Auto-mode off";
   let line = `Auto-mode on • checked: ${state.checkedActions}`;
   if (state.blockedActions > 0) {
-    line = `Auto-mode on · blocked: ${state.blockedActions}/${state.checkedActions}`;
+    line =
+      `Auto-mode on · blocked: ${state.blockedActions}/${state.checkedActions}`;
     const last = state.recentDenials.at(-1);
     if (last) line += ` · last: ${truncateMiddle(last.reason, 60)}`;
   }
   return line;
 }
 
-export function statusText(config: EffectiveConfig, state: AutoModeState): string {
+export function statusText(
+  config: EffectiveConfig,
+  state: AutoModeState,
+): string {
   return [
     `enabled: ${(state.enabledOverride ?? config.enabled) ? "yes" : "no"}`,
-    `classifier: ${state.classifierModelOverride ?? config.classifierModel ?? "current session model"}`,
+    `classifier: ${
+      state.classifierModelOverride ?? config.classifierModel ??
+        "current session model"
+    }`,
     `checked actions: ${state.checkedActions}`,
     `blocked actions: ${state.blockedActions}`,
     `permissions.deny rules: ${config.permissionDeny.length}`,
@@ -46,7 +56,11 @@ export function formatDenials(state: AutoModeState): string {
     .reverse()
     .map(
       (denial) =>
-        `${new Date(denial.timestamp).toLocaleTimeString()} ${denial.kind} ${denial.toolName}: ${denial.reason}\n  ${truncateMiddle(denial.action, 300)}`,
+        `${
+          new Date(denial.timestamp).toLocaleTimeString()
+        } ${denial.kind} ${denial.toolName}: ${denial.reason}\n  ${
+          truncateMiddle(denial.action, 300)
+        }`,
     )
     .join("\n\n");
 }
@@ -70,8 +84,9 @@ export function restoreState(ctx: ExtensionContext): AutoModeState {
       entry.type !== "custom" ||
       entry.customType !== "pi-automode-state" ||
       !entry.data
-    )
+    ) {
       continue;
+    }
     return {
       enabledOverride: entry.data.enabledOverride,
       classifierModelOverride: entry.data.classifierModelOverride,

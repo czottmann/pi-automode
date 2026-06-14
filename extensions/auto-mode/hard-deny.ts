@@ -51,8 +51,9 @@ function splitShellSegments(command: string): string[] {
     ) {
       if (current.trim()) segments.push(current.trim());
       current = "";
-      if ((char === "&" && next === "&") || (char === "|" && next === "|"))
+      if ((char === "&" && next === "&") || (char === "|" && next === "|")) {
         i += 1;
+      }
       continue;
     }
     current += char;
@@ -184,8 +185,9 @@ function segmentHardDeny(
     if (!path) continue;
     const profileReason = isProfileOrAuthorizedKeysPath(path);
     if (profileReason) return profileReason;
-    if (isSafetyControlPath(path, cwd))
+    if (isSafetyControlPath(path, cwd)) {
       return "auto-mode or permission safety-control modification is hard-denied";
+    }
   }
 
   for (const word of segment.words) {
@@ -193,8 +195,9 @@ function segmentHardDeny(
       /^(NODE_TLS_REJECT_UNAUTHORIZED=0|GIT_SSL_NO_VERIFY=(1|true))$/i.test(
         word,
       )
-    )
+    ) {
       return "TLS verification weakening is hard-denied";
+    }
   }
 
   const name = commandName(segment.words);
@@ -205,18 +208,20 @@ function segmentHardDeny(
   if (
     ["curl", "wget"].includes(name) &&
     lowerArgs.some((arg) =>
-      ["--insecure", "-k", "--no-check-certificate"].includes(arg),
+      ["--insecure", "-k", "--no-check-certificate"].includes(arg)
     )
-  )
+  ) {
     return "certificate verification weakening is hard-denied";
+  }
   if (
     ["npm", "yarn", "pnpm"].includes(name) &&
     lowerArgs[0] === "config" &&
     lowerArgs[1] === "set" &&
     ["strict-ssl", "cafile"].includes(lowerArgs[2] ?? "") &&
     ["false", "null"].includes(lowerArgs[3] ?? "")
-  )
+  ) {
     return "package-manager TLS weakening is hard-denied";
+  }
   if (
     name === "git" &&
     lowerArgs[0] === "config" &&
@@ -224,39 +229,48 @@ function segmentHardDeny(
       (arg) => arg === "sslverify" || arg.endsWith(".sslverify"),
     ) &&
     lowerArgs.includes("false")
-  )
+  ) {
     return "git TLS verification weakening is hard-denied";
-  if (name === "crontab" && !lowerArgs.includes("-l"))
+  }
+  if (name === "crontab" && !lowerArgs.includes("-l")) {
     return "persistence or system service mutation is hard-denied";
+  }
   if (
     name === "launchctl" &&
     ["load", "bootstrap", "enable"].includes(lowerArgs[0] ?? "")
-  )
+  ) {
     return "persistence or system service mutation is hard-denied";
+  }
   if (
     name === "systemctl" &&
     ["enable", "disable"].includes(lowerArgs[0] ?? "")
-  )
+  ) {
     return "persistence or system service mutation is hard-denied";
-  if (name === "security" && lowerArgs[0] === "add-trusted-cert")
+  }
+  if (name === "security" && lowerArgs[0] === "add-trusted-cert") {
     return "platform security weakening is hard-denied";
-  if (name === "spctl" && lowerArgs.includes("--master-disable"))
+  }
+  if (name === "spctl" && lowerArgs.includes("--master-disable")) {
     return "platform security weakening is hard-denied";
-  if (name === "csrutil" && lowerArgs[0] === "disable")
+  }
+  if (name === "csrutil" && lowerArgs[0] === "disable") {
     return "platform security weakening is hard-denied";
+  }
 
   if (name === "rm" && args.some(isRecursiveRmArg)) {
     for (const arg of args.filter((arg) => !arg.startsWith("-"))) {
       const path = shellPathTokenToPath(arg, cwd);
-      if (path && isRootHomeOrSystemPath(path))
+      if (path && isRootHomeOrSystemPath(path)) {
         return "irreversible deletion of home/root/system paths is hard-denied";
+      }
     }
   }
 
   if (name === "find" && lowerArgs.includes("-delete")) {
     const root = shellPathTokenToPath(args[0] ?? "", cwd);
-    if (root && isRootHomeOrSystemPath(root) && root !== HOME)
+    if (root && isRootHomeOrSystemPath(root) && root !== HOME) {
       return "system-wide delete is hard-denied";
+    }
   }
 
   if (["chmod", "chown"].includes(name)) {
@@ -270,8 +284,9 @@ function segmentHardDeny(
           path.startsWith("/sbin/") ||
           path.startsWith("/System/") ||
           path.startsWith(resolve(HOME, ".ssh")))
-      )
+      ) {
         return "system or SSH permission mutation is hard-denied";
+      }
     }
   }
 
@@ -318,8 +333,9 @@ export function deterministicHardDeny(
     if (!path) return undefined;
     const profileReason = isProfileOrAuthorizedKeysPath(path);
     if (profileReason) return profileReason;
-    if (isSafetyControlPath(path, cwd))
+    if (isSafetyControlPath(path, cwd)) {
       return "auto-mode or permission safety-control modification is hard-denied";
+    }
   }
 
   if (toolName !== "bash") return undefined;

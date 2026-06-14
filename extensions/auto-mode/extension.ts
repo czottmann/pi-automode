@@ -1,4 +1,8 @@
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { defaultClassifyAction } from "./classifier.ts";
 import {
   AUTO_MODE_GUIDANCE,
@@ -47,9 +51,9 @@ export type PiAutomodeOptions = {
 export function createPiAutomode(options: PiAutomodeOptions = {}) {
   const loadConfigWithDiagnostics = options.loadConfig
     ? (cwd: string): ConfigLoadResult => ({
-        config: options.loadConfig?.(cwd) ?? loadEffectiveConfig(cwd),
-        diagnostics: [],
-      })
+      config: options.loadConfig?.(cwd) ?? loadEffectiveConfig(cwd),
+      diagnostics: [],
+    })
     : loadEffectiveConfigWithDiagnostics;
   const classify = options.classifyAction ?? defaultClassifyAction;
 
@@ -68,8 +72,8 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
       return {
         ...config,
         enabled: state.enabledOverride ?? config.enabled,
-        classifierModel:
-          state.classifierModelOverride ?? config.classifierModel,
+        classifierModel: state.classifierModelOverride ??
+          config.classifierModel,
       };
     }
 
@@ -99,11 +103,12 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
       pushDenial(state, denial);
       persist();
       updateUi(ctx);
-      if (ctx.hasUI)
+      if (ctx.hasUI) {
         ctx.ui.notify(
           `Auto mode blocked ${denial.toolName}: ${denial.reason}`,
           "warning",
         );
+      }
       return { block: true, reason: `[pi-automode] ${denial.reason}` };
     }
 
@@ -151,13 +156,15 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
       }
 
       for (const pattern of cfg.permissionAsk) {
-        if (!matchesToolPattern(pattern, event.toolName, input, ctx.cwd))
+        if (!matchesToolPattern(pattern, event.toolName, input, ctx.cwd)) {
           continue;
+        }
         if (!ctx.hasUI) {
           return block(ctx, {
             timestamp: Date.now(),
             toolName: event.toolName,
-            reason: `Matched permissions.ask (${pattern.raw}) but no UI is available`,
+            reason:
+              `Matched permissions.ask (${pattern.raw}) but no UI is available`,
             action: summary,
             kind: "permissions.ask",
           });

@@ -1,5 +1,10 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Input, SelectList, fuzzyFilter, matchesKey } from "@earendil-works/pi-tui";
+import {
+  fuzzyFilter,
+  Input,
+  matchesKey,
+  SelectList,
+} from "@earendil-works/pi-tui";
 import type { SelectItem } from "@earendil-works/pi-tui";
 import { formatModelSpec } from "./model.ts";
 
@@ -46,7 +51,12 @@ export function promptForClassifierModel(
         const selected = selectList.getSelectedItem();
         const lines: string[] = [];
         lines.push(theme.fg("accent", theme.bold("Select classifier model")));
-        lines.push(theme.fg("dim", "Only showing models from configured providers. Use /login to add providers."));
+        lines.push(
+          theme.fg(
+            "dim",
+            "Only showing models from configured providers. Use /login to add providers.",
+          ),
+        );
         lines.push("");
         lines.push(filterInput.render(width).join("\n"));
         lines.push("");
@@ -61,7 +71,10 @@ export function promptForClassifierModel(
         /* no-op */
       },
       handleInput(data: string) {
-        if (matchesKey(data, "up") || matchesKey(data, "down") || matchesKey(data, "return") || matchesKey(data, "escape")) {
+        if (
+          matchesKey(data, "up") || matchesKey(data, "down") ||
+          matchesKey(data, "return") || matchesKey(data, "escape")
+        ) {
           selectList.handleInput(data);
           tui.requestRender();
           return;

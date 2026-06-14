@@ -36,7 +36,9 @@ function readSettingsFile(path: string): LoadedSettingsFile | undefined {
     return {
       path,
       diagnostics: [
-        `${path}: invalid JSON (${error instanceof Error ? error.message : String(error)})`,
+        `${path}: invalid JSON (${
+          error instanceof Error ? error.message : String(error)
+        })`,
       ],
     };
   }
@@ -54,10 +56,11 @@ function validateStringArraySetting(
     return;
   }
   for (const [index, entry] of value.entries()) {
-    if (typeof entry !== "string" || entry.trim() === "")
+    if (typeof entry !== "string" || entry.trim() === "") {
       diagnostics.push(
         `${source}: ${key}[${index}] must be a non-empty string`,
       );
+    }
   }
   if (value.length > 0 && !value.includes("$defaults")) {
     diagnostics.push(
@@ -74,8 +77,9 @@ export function validateSettingsFile(
   const diagnostics: string[] = [];
   const root = settings as Record<string, unknown>;
   for (const key of Object.keys(root)) {
-    if (key !== "autoMode" && key !== "permissions")
+    if (key !== "autoMode" && key !== "permissions") {
       diagnostics.push(`${source}: unknown top-level key ${key}`);
+    }
   }
 
   if (settings.autoMode !== undefined) {
@@ -100,26 +104,32 @@ export function validateSettingsFile(
         "hardDeny",
       ]);
       for (const key of Object.keys(autoMode)) {
-        if (!knownAutoMode.has(key))
+        if (!knownAutoMode.has(key)) {
           diagnostics.push(`${source}: unknown autoMode key ${key}`);
+        }
       }
-      if (hasOwn(autoMode, "enabled") && typeof autoMode.enabled !== "boolean")
+      if (
+        hasOwn(autoMode, "enabled") && typeof autoMode.enabled !== "boolean"
+      ) {
         diagnostics.push(`${source}: autoMode.enabled must be a boolean`);
+      }
       if (
         hasOwn(autoMode, "classifierModel") &&
         typeof autoMode.classifierModel !== "string"
-      )
+      ) {
         diagnostics.push(
           `${source}: autoMode.classifierModel must be a provider/model string`,
         );
+      }
       if (
         hasOwn(autoMode, "maxTranscriptLines") &&
         (!Number.isInteger(autoMode.maxTranscriptLines) ||
           Number(autoMode.maxTranscriptLines) <= 0)
-      )
+      ) {
         diagnostics.push(
           `${source}: autoMode.maxTranscriptLines must be a positive integer`,
         );
+      }
       validateStringArraySetting(
         autoMode.environment,
         source,
@@ -163,8 +173,9 @@ export function validateSettingsFile(
     } else {
       const permissions = settings.permissions as Record<string, unknown>;
       for (const key of Object.keys(permissions)) {
-        if (key !== "deny" && key !== "ask")
+        if (key !== "deny" && key !== "ask") {
           diagnostics.push(`${source}: unknown permissions key ${key}`);
+        }
       }
       for (const key of ["deny", "ask"] as const) {
         const value = permissions[key];
@@ -176,10 +187,11 @@ export function validateSettingsFile(
           continue;
         }
         for (const [index, entry] of value.entries()) {
-          if (typeof entry !== "string" || !parseToolPattern(entry))
+          if (typeof entry !== "string" || !parseToolPattern(entry)) {
             diagnostics.push(
               `${source}: permissions.${key}[${index}] must be a tool pattern string`,
             );
+          }
         }
       }
     }
@@ -210,10 +222,9 @@ function applyRuleSetting(accumulator: RuleAccumulator, value: unknown): void {
 }
 
 function finalizeRuleSetting(accumulator: RuleAccumulator): string[] {
-  const base =
-    accumulator.includeDefaults || !accumulator.seen
-      ? accumulator.defaults
-      : [];
+  const base = accumulator.includeDefaults || !accumulator.seen
+    ? accumulator.defaults
+    : [];
   return [...new Set([...base, ...accumulator.entries])];
 }
 
@@ -307,12 +318,14 @@ export function buildEffectiveConfigFromSources(
     hardDeny: finalizeRuleSetting(hardDeny),
   };
 
-  for (const settings of [
-    ...globalSettings,
-    ...projectSharedSettings,
-    ...projectLocalSettings,
-    ...inlineSettings,
-  ]) {
+  for (
+    const settings of [
+      ...globalSettings,
+      ...projectSharedSettings,
+      ...projectLocalSettings,
+      ...inlineSettings,
+    ]
+  ) {
     appendPermissionPatterns(config.permissionDeny, settings, "deny");
     appendPermissionPatterns(config.permissionAsk, settings, "ask");
   }
@@ -349,17 +362,19 @@ export function loadEffectiveConfigWithDiagnostics(
       );
     } catch (error) {
       diagnostics.push(
-        `PI_AUTOMODE_SETTINGS_JSON: invalid JSON (${error instanceof Error ? error.message : String(error)})`,
+        `PI_AUTOMODE_SETTINGS_JSON: invalid JSON (${
+          error instanceof Error ? error.message : String(error)
+        })`,
       );
     }
   }
 
   const globalFiles = PI_GLOBAL_SETTINGS.map(readSettingsFile);
   const projectLocalFiles = PI_PROJECT_LOCAL_SETTINGS.map((file) =>
-    readSettingsFile(resolve(cwd, file)),
+    readSettingsFile(resolve(cwd, file))
   );
   const projectSharedFiles = PI_PROJECT_SHARED_SETTINGS.map((file) =>
-    readSettingsFile(resolve(cwd, file)),
+    readSettingsFile(resolve(cwd, file))
   );
   const fileDiagnostics = loadedSettingsDiagnostics([
     ...globalFiles,

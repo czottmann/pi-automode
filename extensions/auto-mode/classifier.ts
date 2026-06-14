@@ -1,10 +1,18 @@
 import { complete } from "@earendil-works/pi-ai";
-import type { AssistantMessage, Model, UserMessage } from "@earendil-works/pi-ai";
+import type {
+  AssistantMessage,
+  Model,
+  UserMessage,
+} from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CLASSIFIER_SYSTEM_PROMPT } from "./constants.ts";
 import { parseModelSpec } from "./model.ts";
 import { buildTranscript } from "./transcript.ts";
-import type { ClassificationDecision, ClassifyAction, EffectiveConfig } from "./types.ts";
+import type {
+  ClassificationDecision,
+  ClassifyAction,
+  EffectiveConfig,
+} from "./types.ts";
 
 export function buildClassifierPrompt(config: EffectiveConfig): string {
   return CLASSIFIER_SYSTEM_PROMPT.replace(
@@ -35,11 +43,11 @@ async function resolveClassifier(
   const configured = config.classifierModel;
   const model = configured
     ? (() => {
-        const parsed = parseModelSpec(configured);
-        return parsed
-          ? ctx.modelRegistry.find(parsed.provider, parsed.id)
-          : undefined;
-      })()
+      const parsed = parseModelSpec(configured);
+      return parsed
+        ? ctx.modelRegistry.find(parsed.provider, parsed.id)
+        : undefined;
+    })()
     : ctx.model;
   if (!model) return undefined;
   const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
@@ -102,7 +110,11 @@ export const defaultClassifyAction: ClassifyAction = async (
     content: [
       {
         type: "text",
-        text: `<loaded-project-instructions>\n${loadedContext || "(none)"}\n</loaded-project-instructions>\n\n<transcript>\n${buildTranscript(ctx, config.maxTranscriptLines) || "(none)"}\n</transcript>\n\nLatest action to classify:\n${action}`,
+        text: `<loaded-project-instructions>\n${
+          loadedContext || "(none)"
+        }\n</loaded-project-instructions>\n\n<transcript>\n${
+          buildTranscript(ctx, config.maxTranscriptLines) || "(none)"
+        }\n</transcript>\n\nLatest action to classify:\n${action}`,
       },
     ],
     timestamp: Date.now(),
@@ -132,7 +144,9 @@ export const defaultClassifyAction: ClassifyAction = async (
     return {
       decision: "block",
       tier: "none",
-      reason: `Classifier failed; auto mode fails closed: ${error instanceof Error ? error.message : String(error)}`,
+      reason: `Classifier failed; auto mode fails closed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
     };
   }
 };

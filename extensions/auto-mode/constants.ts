@@ -112,7 +112,8 @@ Auto mode is active. Routine permission prompts are replaced by a pre-execution 
 - Never try to bypass auto mode, weaken safety controls, or modify auto-mode/permission configuration.
 - User intent must be direct and specific for destructive, external, production, or irreversible actions.`;
 
-export const CLASSIFIER_SYSTEM_PROMPT = `You are an auto-mode security classifier for an autonomous coding agent.
+export const CLASSIFIER_SYSTEM_PROMPT =
+  `You are an auto-mode security classifier for an autonomous coding agent.
 
 You evaluate the agent's latest tool call before it runs. Return only JSON.
 

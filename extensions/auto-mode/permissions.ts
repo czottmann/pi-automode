@@ -48,8 +48,9 @@ function getPrimaryArgument(
   input: Record<string, unknown>,
   cwd: string,
 ): string {
-  if (toolName === "bash" && typeof input.command === "string")
+  if (toolName === "bash" && typeof input.command === "string") {
     return input.command;
+  }
   if (
     (toolName === "read" || toolName === "write" || toolName === "edit") &&
     typeof input.path === "string"
@@ -59,8 +60,9 @@ function getPrimaryArgument(
       cwd,
     );
   }
-  if (toolName === "grep" && typeof input.pattern === "string")
+  if (toolName === "grep" && typeof input.pattern === "string") {
     return input.pattern;
+  }
   if (
     (toolName === "find" || toolName === "ls") &&
     typeof input.path === "string"

@@ -1,12 +1,23 @@
 import { realpathSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, normalize, relative, resolve } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  normalize,
+  relative,
+  resolve,
+} from "node:path";
 import { HOME, PROFILE_FILES } from "./constants.ts";
 
 function stripLeadingAt(value: string): string {
   return value.startsWith("@") ? value.slice(1) : value;
 }
 
-export function resolveInputPath(cwd: string, value: unknown): string | undefined {
+export function resolveInputPath(
+  cwd: string,
+  value: unknown,
+): string | undefined {
   if (typeof value !== "string" || value.trim() === "") return undefined;
   const raw = stripLeadingAt(value.trim());
   return isAbsolute(raw) ? resolve(raw) : resolve(cwd, raw);
@@ -23,7 +34,11 @@ export function isInside(child: string, parent: string): boolean {
   return rel === "" || (!!rel && !rel.startsWith("..") && !isAbsolute(rel));
 }
 
-export function isProtectedPath(path: string, cwd: string, protectedPaths: string[]): boolean {
+export function isProtectedPath(
+  path: string,
+  cwd: string,
+  protectedPaths: string[],
+): boolean {
   // Resolve symlinks so writes through symlinks (e.g. not-git -> .git) are caught.
   let resolved = path;
   try {
@@ -77,20 +92,26 @@ export function isSafetyControlPath(path: string, cwd: string): boolean {
   if (
     normalized.endsWith("/.pi/auto-mode.json") ||
     normalized.endsWith("/auto-mode.json")
-  )
+  ) {
     return true;
-  if (normalized.includes("/.pi/extensions/") && file.includes("auto"))
+  }
+  if (normalized.includes("/.pi/extensions/") && file.includes("auto")) {
     return true;
+  }
   if (normalized.includes("/.pi/") && file.startsWith("automode")) return true;
   if (
     normalized.includes("/pi-automode/") ||
     (isInside(path, cwd) && file.includes("auto-mode"))
-  )
+  ) {
     return true;
+  }
   return false;
 }
 
-export function shellPathTokenToPath(token: string, cwd: string): string | undefined {
+export function shellPathTokenToPath(
+  token: string,
+  cwd: string,
+): string | undefined {
   let value = token.trim();
   if (!value || value === "-" || value.startsWith("&")) return undefined;
   value = value
@@ -100,10 +121,14 @@ export function shellPathTokenToPath(token: string, cwd: string): string | undef
   return isAbsolute(value) ? resolve(value) : resolve(cwd, value);
 }
 
-export function isProfileOrAuthorizedKeysPath(path: string): string | undefined {
-  if (PROFILE_FILES.has(path))
+export function isProfileOrAuthorizedKeysPath(
+  path: string,
+): string | undefined {
+  if (PROFILE_FILES.has(path)) {
     return "shell profile modification is hard-denied";
-  if (path === resolve(HOME, ".ssh/authorized_keys"))
+  }
+  if (path === resolve(HOME, ".ssh/authorized_keys")) {
     return "SSH authorized_keys modification is hard-denied";
+  }
   return undefined;
 }

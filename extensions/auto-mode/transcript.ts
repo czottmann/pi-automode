@@ -42,11 +42,16 @@ function collectAssistantToolCalls(content: unknown): string[] {
     .filter((block) => block.type === "toolCall" || block.type === "tool_use")
     .map(
       (block) =>
-        `${String(block.name ?? "tool")} ${safeJson("arguments" in block ? block.arguments : block.input, 1200)}`,
+        `${String(block.name ?? "tool")} ${
+          safeJson("arguments" in block ? block.arguments : block.input, 1200)
+        }`,
     );
 }
 
-export function buildTranscript(ctx: ExtensionContext, maxLines: number): string {
+export function buildTranscript(
+  ctx: ExtensionContext,
+  maxLines: number,
+): string {
   const lines: string[] = [];
   for (const entry of ctx.sessionManager.getBranch()) {
     if (entry.type !== "message") continue;
@@ -57,8 +62,9 @@ export function buildTranscript(ctx: ExtensionContext, maxLines: number): string
     } else if (message.role === "assistant") {
       const text = flattenAssistantText(message.content).trim();
       if (text) lines.push(`Assistant: ${truncateMiddle(text, 2000)}`);
-      for (const toolCall of collectAssistantToolCalls(message.content))
+      for (const toolCall of collectAssistantToolCalls(message.content)) {
         lines.push(`AssistantAction: ${toolCall}`);
+      }
     }
   }
   return lines.slice(-maxLines).join("\n");
@@ -74,7 +80,9 @@ export function loadedContextFromSystemPromptOptions(options: unknown): string {
   return contextFiles
     .map(
       (file) =>
-        `# ${file.path ?? "context"}\n${truncateMiddle(file.content ?? "", 4000)}`,
+        `# ${file.path ?? "context"}\n${
+          truncateMiddle(file.content ?? "", 4000)
+        }`,
     )
     .join("\n\n");
 }
