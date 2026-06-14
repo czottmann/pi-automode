@@ -8,7 +8,8 @@
     "pi-package"
   ],
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "check": "tsc --noEmit",
+    "build": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts"
   },
   "files": [
