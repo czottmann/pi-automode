@@ -2,6 +2,9 @@
   "name": "@czottmann/pi-automode",
   "version": "1.0.0",
   "description": "Claude Code-style auto mode guardrail for pi.",
+  "repository": {
+    "url": "https://github.com/czottmann/pi-automode"
+  },
   "type": "module",
   "license": "MIT",
   "publishConfig": {
