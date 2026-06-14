@@ -199,7 +199,7 @@ Everything else goes to the classifier. If the classifier is missing, fails, or 
 ## Development
 
 ```bash
-npm run typecheck
+npm run check
 npm test
 npm pack --dry-run
 ```

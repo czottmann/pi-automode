@@ -4,6 +4,9 @@
   "description": "Claude Code-style auto mode guardrail for pi.",
   "type": "module",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "keywords": [
     "pi",
     "pi-extension",
@@ -13,6 +16,7 @@
     "coding-agent"
   ],
   "scripts": {
+    "typecheck": "tsc --noEmit",
     "check": "tsc --noEmit",
     "build": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts"
