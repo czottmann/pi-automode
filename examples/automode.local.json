@@ -1,0 +1,32 @@
+{
+  "autoMode": {
+    "environment": [
+      "$defaults",
+      "Source control: github.example.com/acme-corp and all repos under it",
+      "Trusted internal domains: *.corp.example.com, api.internal.example.com",
+      "Trusted cloud buckets: s3://acme-build-artifacts, gs://acme-dev-scratch"
+    ],
+    "allow": [
+      "$defaults",
+      "Deploying to the staging namespace is allowed when the command names staging explicitly."
+    ],
+    "soft_deny": [
+      "$defaults",
+      "Never run database migrations except through the project's migrations CLI."
+    ],
+    "hard_deny": [
+      "$defaults",
+      "Never send repository contents to third-party code-review APIs."
+    ]
+  },
+  "permissions": {
+    "ask": [
+      "bash(git push *)"
+    ],
+    "deny": [
+      "bash(git push --force*)",
+      "edit(.env*)",
+      "write(.env*)"
+    ]
+  }
+}
