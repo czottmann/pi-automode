@@ -5,7 +5,12 @@
   "type": "module",
   "license": "MIT",
   "keywords": [
-    "pi-package"
+    "pi",
+    "pi-extension",
+    "pi-package",
+    "auto-mode",
+    "llm",
+    "coding-agent"
   ],
   "scripts": {
     "check": "tsc --noEmit",
