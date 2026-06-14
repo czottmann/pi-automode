@@ -29,15 +29,16 @@ pi -e ./extensions/auto-mode.ts
 ## Commands
 
 ```text
-/automode status
-/automode on
-/automode off
-/automode reload
-/automode reset
-/automode defaults
-/automode config
-/automode denials
-/automode model provider/model-id
+/automode status    # current state, rules, and classifier
+/automode on        # re-enable for this session
+/automode off       # disable for this session
+/automode reload    # reload config from disk
+/automode reset     # reset denial counters only
+/automode defaults  # print the built-in rule lists
+/automode config    # current effective config + diagnostics
+/automode denials   # denial history for this session
+/automode model     # open classifier model selector
+/automode model provider/model-id # set classifier directly
 ```
 
 `/auto-mode` is an alias.
