@@ -31,7 +31,7 @@
   ],
   "pi": {
     "extensions": [
-      "./extensions"
+      "./extensions/auto-mode.ts"
     ]
   },
   "peerDependencies": {
