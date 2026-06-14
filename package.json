@@ -1,5 +1,5 @@
 {
-  "name": "pi-automode",
+  "name": "@czottmann/pi-automode",
   "version": "0.1.0",
   "description": "Claude Code-style auto mode guardrail for pi.",
   "type": "module",

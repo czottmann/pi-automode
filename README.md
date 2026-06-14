@@ -11,7 +11,7 @@ It is not a sandbox. Extensions run in the Pi process, and a determined maliciou
 From npm:
 
 ```bash
-pi install npm:pi-automode
+pi install npm:@czottmann/pi-automode
 ```
 
 From a local checkout:
