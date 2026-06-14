@@ -936,8 +936,13 @@ function pushDenial(state: AutoModeState, denial: DenialRecord): void {
 function statusLine(config: EffectiveConfig, state: AutoModeState): string {
 	const enabled = state.enabledOverride ?? config.enabled;
 	if (!enabled) return "automode off";
-	if (state.blockedActions > 0) return `automode on • blocked:${state.blockedActions}/${state.checkedActions}`;
-	return `automode on • checked:${state.checkedActions}`;
+	let line = `automode on • checked:${state.checkedActions}`;
+	if (state.blockedActions > 0) {
+		line = `automode on • blocked:${state.blockedActions}/${state.checkedActions}`;
+		const last = state.recentDenials.at(-1);
+		if (last) line += ` • last: ${truncateMiddle(last.reason, 60)}`;
+	}
+	return line;
 }
 
 function statusText(config: EffectiveConfig, state: AutoModeState): string {
@@ -964,20 +969,6 @@ function formatDenials(state: AutoModeState): string {
 		.reverse()
 		.map((denial) => `${new Date(denial.timestamp).toLocaleTimeString()} ${denial.kind} ${denial.toolName}: ${denial.reason}\n  ${truncateMiddle(denial.action, 300)}`)
 		.join("\n\n");
-}
-
-function renderRecentDenials(ctx: ExtensionContext, state: AutoModeState): void {
-	if (!ctx.hasUI) return;
-	if (state.recentDenials.length === 0) {
-		ctx.ui.setWidget("pi-automode-denials", undefined);
-		return;
-	}
-	const lines = [ctx.ui.theme.fg("warning", ctx.ui.theme.bold("Recent auto-mode denials"))];
-	for (const denial of state.recentDenials.slice().reverse().slice(0, 5)) {
-		const time = new Date(denial.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-		lines.push(`${ctx.ui.theme.fg("dim", time)} ${ctx.ui.theme.fg("muted", denial.toolName)} ${truncateMiddle(denial.reason, 120)}`);
-	}
-	ctx.ui.setWidget("pi-automode-denials", lines, { placement: "belowEditor" });
 }
 
 function actionSummary(toolName: string, input: Record<string, unknown>): string {
@@ -1048,7 +1039,6 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
 		const cfg = effectiveConfig();
 		const text = statusLine(cfg, state);
 		ctx.ui.setStatus("pi-automode", cfg.enabled ? ctx.ui.theme.fg("accent", text) : ctx.ui.theme.fg("dim", text));
-		renderRecentDenials(ctx, state);
 	}
 
 	function block(ctx: ExtensionContext, denial: DenialRecord): { block: true; reason: string } {
