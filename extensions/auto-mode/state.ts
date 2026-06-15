@@ -32,10 +32,7 @@ export function statusText(
 ): string {
   return [
     `enabled: ${(state.enabledOverride ?? config.enabled) ? "yes" : "no"}`,
-    `classifier: ${
-      state.classifierModelOverride ?? config.classifierModel ??
-        "current session model"
-    }`,
+    `classifier: ${config.classifierModel ?? "current session model"}`,
     `checked actions: ${state.checkedActions}`,
     `blocked actions: ${state.blockedActions}`,
     `permissions.deny rules: ${config.permissionDeny.length}`,
@@ -89,7 +86,6 @@ export function restoreState(ctx: ExtensionContext): AutoModeState {
     }
     return {
       enabledOverride: entry.data.enabledOverride,
-      classifierModelOverride: entry.data.classifierModelOverride,
       lastDecision: entry.data.lastDecision,
       lastReason: entry.data.lastReason,
       checkedActions: entry.data.checkedActions ?? 0,

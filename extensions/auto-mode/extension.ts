@@ -16,6 +16,7 @@ import {
 import {
   loadEffectiveConfig,
   loadEffectiveConfigWithDiagnostics,
+  writeGlobalClassifierModel,
 } from "./config.ts";
 import { deterministicHardDeny } from "./hard-deny.ts";
 import { formatModelSpec, parseModelSpec } from "./model.ts";
@@ -45,6 +46,8 @@ export type PiAutomodeOptions = {
   loadConfig?: (cwd: string) => EffectiveConfig;
   /** Override classifier calls in tests so unit tests never need a real LLM/API key. */
   classifyAction?: ClassifyAction;
+  /** Override classifier-model persistence in tests. Runtime code writes ~/.pi/automode.json. */
+  saveClassifierModel?: (classifierModel: string) => void;
 };
 
 /** Create a Pi extension instance. Default export uses production dependencies. */
@@ -56,6 +59,8 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
     })
     : loadEffectiveConfigWithDiagnostics;
   const classify = options.classifyAction ?? defaultClassifyAction;
+  const saveClassifierModel = options.saveClassifierModel ??
+    writeGlobalClassifierModel;
 
   return function piAutomode(pi: ExtensionAPI) {
     let loadResult = loadConfigWithDiagnostics(process.cwd());
@@ -72,8 +77,6 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
       return {
         ...config,
         enabled: state.enabledOverride ?? config.enabled,
-        classifierModel: state.classifierModelOverride ??
-          config.classifierModel,
       };
     }
 
@@ -294,7 +297,6 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
           blockedActions: 0,
           recentDenials: [],
           enabledOverride: state.enabledOverride,
-          classifierModelOverride: state.classifierModelOverride,
         };
         persist();
         updateUi(ctx);
@@ -335,36 +337,20 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
         return;
       }
       if (command === "model") {
-        if (!remainder) {
-          const selected = await promptForClassifierModel(
-            ctx,
-            effectiveConfig().classifierModel ?? state.classifierModelOverride,
-          );
-          if (!selected) {
-            ctx.ui.notify("Classifier model unchanged", "info");
-            return;
-          }
-          const parsed = parseModelSpec(selected);
-          const model = parsed
-            ? ctx.modelRegistry.find(parsed.provider, parsed.id)
-            : undefined;
-          if (model) {
-            state.classifierModelOverride = selected;
-            persist();
-            updateUi(ctx);
-            ctx.ui.notify(
-              `pi-automode classifier set for this session: ${selected}`,
-              "info",
-            );
-          }
+        const selected = remainder || await promptForClassifierModel(
+          ctx,
+          effectiveConfig().classifierModel,
+        );
+        if (!selected) {
+          ctx.ui.notify("Classifier model unchanged", "info");
           return;
         }
-        const parsed = parseModelSpec(remainder);
+        const parsed = parseModelSpec(selected);
         const model = parsed
           ? ctx.modelRegistry.find(parsed.provider, parsed.id)
           : undefined;
         if (!model) {
-          ctx.ui.notify(`Model not found: ${remainder}`, "error");
+          ctx.ui.notify(`Model not found: ${selected}`, "error");
           return;
         }
         const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
@@ -372,11 +358,29 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
           ctx.ui.notify(auth.error, "error");
           return;
         }
-        state.classifierModelOverride = formatModelSpec(model);
+        const modelSpec = formatModelSpec(model);
+        try {
+          saveClassifierModel(modelSpec);
+        } catch (error) {
+          ctx.ui.notify(
+            `Failed to save classifier model: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+            "error",
+          );
+          return;
+        }
+        loadResult = loadConfigWithDiagnostics(ctx.cwd);
+        config = loadResult.config;
+        configDiagnostics = loadResult.diagnostics;
         persist();
         updateUi(ctx);
+        const active = effectiveConfig().classifierModel ??
+          "current session model";
         ctx.ui.notify(
-          `pi-automode classifier set for this session: ${state.classifierModelOverride}`,
+          active === modelSpec
+            ? `pi-automode classifier saved globally: ${modelSpec}`
+            : `pi-automode classifier saved globally: ${modelSpec}; current config uses ${active}`,
           "info",
         );
         return;

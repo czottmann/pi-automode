@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -15,6 +15,7 @@ import {
 	parseClassifierDecision,
 	parseToolPattern,
 	validateSettingsFile,
+	writeGlobalClassifierModel,
 	type ClassificationDecision,
 	type EffectiveConfig,
 } from "../extensions/auto-mode.ts";
@@ -144,6 +145,7 @@ test("project shared Pi settings can add permissions but cannot weaken autoMode"
 		projectSharedSettings: [
 			{
 				autoMode: {
+					classifierModel: "shared/model",
 					allow: ["checked-in repo tries to allow everything"],
 					hard_deny: ["checked-in repo tries to replace hard denies"],
 				},
@@ -154,10 +156,20 @@ test("project shared Pi settings can add permissions but cannot weaken autoMode"
 		],
 	});
 
+	assert.equal(config.classifierModel, undefined);
 	assert.equal(config.allow.includes("checked-in repo tries to allow everything"), false);
 	assert.equal(config.hardDeny.includes("checked-in repo tries to replace hard denies"), false);
 	assert.equal(config.permissionDeny.length, 1);
 	assert.equal(config.permissionDeny[0]?.raw, "bash(git push --force*)");
+});
+
+test("project-local classifier model overrides global classifier model", () => {
+	const config = buildEffectiveConfigFromSources({
+		globalSettings: [{ autoMode: { classifierModel: "global/model" } }],
+		projectLocalSettings: [{ autoMode: { classifierModel: "project/model" } }],
+	});
+
+	assert.equal(config.classifierModel, "project/model");
 });
 
 test("rule lists replace defaults only for their own section when $defaults is omitted", () => {
@@ -237,6 +249,53 @@ test("shell parsing catches risky suffixes, redirects, and quoted HOME targets",
 		deterministicHardDeny("bash", { command: "echo nope | tee .pi/automode.local.json" }, "/tmp/project") ?? "",
 		/safety-control/,
 	);
+});
+
+test("writeGlobalClassifierModel preserves global automode settings", () => {
+	const tmpDir = mkdtempSync(join(os.tmpdir(), "pi-automode-config-"));
+	try {
+		const path = join(tmpDir, ".pi", "automode.json");
+		writeGlobalClassifierModel("test/first", path);
+		assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), {
+			autoMode: { classifierModel: "test/first" },
+		});
+
+		writeFileSync(
+			path,
+			JSON.stringify({
+				autoMode: { enabled: false, allow: ["$defaults", "ok"] },
+				permissions: { deny: ["bash(rm -rf *)"] },
+			}),
+		);
+		writeGlobalClassifierModel("test/second", path);
+		assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), {
+			autoMode: {
+				enabled: false,
+				allow: ["$defaults", "ok"],
+				classifierModel: "test/second",
+			},
+			permissions: { deny: ["bash(rm -rf *)"] },
+		});
+	} finally {
+		rmSync(tmpDir, { recursive: true, force: true });
+	}
+});
+
+test("/automode model saves the selected classifier globally", async () => {
+	const fake = createFakePi();
+	let saved: string | undefined;
+	createPiAutomode({
+		loadConfig: () => baseConfig(saved ? { classifierModel: saved } : {}),
+		saveClassifierModel: (classifierModel) => {
+			saved = classifierModel;
+		},
+	})(fake.pi);
+	const ctx = createFakeCtx(fake.entries);
+	await fake.emit("session_start", { type: "session_start" }, ctx);
+
+	await fake.commands.get("automode")?.handler("model test/classifier", ctx);
+
+	assert.equal(saved, "test/classifier");
 });
 
 test("config validation reports unknown keys, wrong types, and missing defaults", () => {

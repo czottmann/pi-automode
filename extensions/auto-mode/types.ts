@@ -48,7 +48,6 @@ export type EffectiveConfig = {
 
 export type AutoModeState = {
   enabledOverride?: boolean;
-  classifierModelOverride?: string;
   lastDecision?: "allow" | "block";
   lastReason?: string;
   checkedActions: number;

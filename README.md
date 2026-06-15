@@ -37,8 +37,8 @@ pi -e ./extensions/auto-mode.ts
 /automode defaults  # print the built-in rule lists
 /automode config    # current effective config + diagnostics
 /automode denials   # denial history for this session
-/automode model     # open classifier model selector
-/automode model provider/model-id # set classifier directly
+/automode model     # open classifier model selector and save to ~/.pi/automode.json
+/automode model provider/model-id # save classifier model to ~/.pi/automode.json
 ```
 
 `/auto-mode` is an alias.
@@ -55,11 +55,14 @@ It reads `autoMode` from Pi-owned config only:
 
 It deliberately does not read `autoMode` from shared project `.pi/automode.json`, because a checked-in repo should not be able to weaken auto-mode rules. Shared project config may still contribute `permissions.deny` and `permissions.ask`.
 
+Set a global default classifier model in `~/.pi/automode.json`; override it per project in `.pi/automode.local.json`.
+
 Example:
 
 ```json
 {
   "autoMode": {
+    "classifierModel": "provider/model-id",
     "environment": [
       "$defaults",
       "Source control: github.example.com/acme-corp and all repos under it",

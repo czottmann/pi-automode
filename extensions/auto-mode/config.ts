@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import {
   DEFAULT_ALLOW,
   DEFAULT_ENVIRONMENT,
@@ -396,4 +396,39 @@ export function loadEffectiveConfigWithDiagnostics(
 /** Load config from disk and environment variables. Exported for tests and diagnostics. */
 export function loadEffectiveConfig(cwd: string): EffectiveConfig {
   return loadEffectiveConfigWithDiagnostics(cwd).config;
+}
+
+function readWritableSettingsFile(path: string): SettingsFile {
+  if (!existsSync(path)) return {};
+  const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${path}: root must be a JSON object`);
+  }
+  const settings = parsed as SettingsFile;
+  if (
+    settings.autoMode !== undefined &&
+    (!settings.autoMode ||
+      typeof settings.autoMode !== "object" ||
+      Array.isArray(settings.autoMode))
+  ) {
+    throw new Error(`${path}: autoMode must be a JSON object`);
+  }
+  return settings;
+}
+
+/** Persist the global default classifier model while preserving other settings. */
+export function writeGlobalClassifierModel(
+  classifierModel: string,
+  path = PI_GLOBAL_SETTINGS[0],
+): void {
+  const settings = readWritableSettingsFile(path);
+  const next: SettingsFile = {
+    ...settings,
+    autoMode: {
+      ...settings.autoMode,
+      classifierModel,
+    },
+  };
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`, "utf8");
 }
