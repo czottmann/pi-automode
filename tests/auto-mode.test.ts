@@ -8,6 +8,7 @@ import {
 	DEFAULT_ALLOW,
 	DEFAULT_PROTECTED_PATHS,
 	DEFAULT_SOFT_DENY,
+	PI_GLOBAL_SETTINGS,
 	buildEffectiveConfigFromSources,
 	createPiAutomode,
 	deterministicHardDeny,
@@ -140,6 +141,10 @@ async function setupHookTest(options: {
 	return { ...fake, ctx, get classifierCalls() { return classifierCalls; } };
 }
 
+test("global config path uses Pi agent config directory", () => {
+	assert.match(PI_GLOBAL_SETTINGS[0] ?? "", /\.pi\/agent\/automode\.json$/);
+});
+
 test("project shared Pi settings can add permissions but cannot weaken autoMode", () => {
 	const config = buildEffectiveConfigFromSources({
 		projectSharedSettings: [
@@ -254,7 +259,7 @@ test("shell parsing catches risky suffixes, redirects, and quoted HOME targets",
 test("writeGlobalClassifierModel preserves global automode settings", () => {
 	const tmpDir = mkdtempSync(join(os.tmpdir(), "pi-automode-config-"));
 	try {
-		const path = join(tmpDir, ".pi", "automode.json");
+		const path = join(tmpDir, ".pi", "agent", "automode.json");
 		writeGlobalClassifierModel("test/first", path);
 		assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), {
 			autoMode: { classifierModel: "test/first" },

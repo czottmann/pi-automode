@@ -149,7 +149,7 @@ Examples:
 Respond with JSON exactly matching:
 {"decision":"allow"|"block","tier":"hard_deny"|"soft_deny"|"allow"|"explicit_intent"|"none","reason":"brief concrete reason"}`;
 
-export const PI_GLOBAL_SETTINGS = [resolve(HOME, ".pi/automode.json")];
+export const PI_GLOBAL_SETTINGS = [resolve(HOME, ".pi/agent/automode.json")];
 export const PI_PROJECT_LOCAL_SETTINGS = [".pi/automode.local.json"];
 export const PI_PROJECT_SHARED_SETTINGS = [".pi/automode.json"];
 

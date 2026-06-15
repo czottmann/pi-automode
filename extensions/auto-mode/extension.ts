@@ -46,7 +46,7 @@ export type PiAutomodeOptions = {
   loadConfig?: (cwd: string) => EffectiveConfig;
   /** Override classifier calls in tests so unit tests never need a real LLM/API key. */
   classifyAction?: ClassifyAction;
-  /** Override classifier-model persistence in tests. Runtime code writes ~/.pi/automode.json. */
+  /** Override classifier-model persistence in tests. Runtime code writes ~/.pi/agent/automode.json. */
   saveClassifierModel?: (classifierModel: string) => void;
 };
 
