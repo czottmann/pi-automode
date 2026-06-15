@@ -121,6 +121,10 @@ Everything else goes to the classifier. If the classifier is missing, fails, or 
 
 - `examples/automode.local.json`: copy to `.pi/automode.local.json` in a project and edit the domains, buckets, and source-control org.
 
+## Known limits
+
+Claude Code's real classifier and exact built-in rules are private. This package implements the documented precedence and configuration behavior, with a local classifier prompt and deterministic hard-deny checks.
+
 ## Development
 
 ```bash
@@ -131,6 +135,17 @@ npm pack --dry-run
 
 The tests cover the risky parts: scoped permission matching, config-source precedence, `$defaults` behavior, config diagnostics, deterministic hard-deny checks, shell parsing for risky bash fragments, classifier JSON parsing, hook-level blocking/allowing, classifier mocking, and protected-path enforcement.
 
-## Known limits
+## Publishing
 
-Claude Code's real classifier and exact built-in rules are private. This package implements the documented precedence and configuration behavior, with a local classifier prompt and deterministic hard-deny checks.
+GitHub Actions publishes the package to npm when a GitHub Release is published. The release tag must match `package.json` exactly, with or without a leading `v` (`v1.0.0` and `1.0.0` both work for version `1.0.0`).
+
+The workflow uses npm Trusted Publishing, so it does not need an npm token secret. Configure this package on npm with this repository and workflow file (`.github/workflows/publish.yml`). The workflow builds the package, runs `npm run check`, and publishes with npm provenance.
+
+## Author
+
+Carlo Zottmann, <carlo@zottmann.dev>
+
+- Website: https://actions.work
+- GitHub: https://github.com/czottmann
+- Bluesky: https://bsky.app/profile/zottmann.dev
+- Mastodon: https://norden.social/@czottmann
