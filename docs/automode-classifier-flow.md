@@ -73,14 +73,14 @@ Config is loaded on `session_start` and can be reloaded with `/automode reload`.
 
 The effective config combines these sources:
 
-- `~/.pi/automode.json`
+- `~/.pi/agent/automode.json`
 - `.pi/automode.local.json`
 - `PI_AUTOMODE_SETTINGS_JSON`
 - shared `.pi/automode.json`, but only for `permissions.deny` and `permissions.ask`
 
 Shared project `.pi/automode.json` cannot change `autoMode` rules. That is deliberate: a checked-in repo must not be able to weaken auto-mode. It may still add Pi permission rules.
 
-List settings such as `allow`, `soft_deny`, `hard_deny`, `environment`, and `protectedPaths` support `$defaults`. Omitting `$defaults` replaces the built-ins for that section only.
+List settings such as `allow`, `soft_deny`, `hard_deny`, `environment`, and `protectedPaths` support `$defaults`. Omitting `$defaults` replaces the built-ins for that section only. See [Defaults and rule-list behavior](defaults.md).
 
 ## Context captured before classification
 
@@ -239,9 +239,10 @@ Hidden assistant reasoning is not sent by this extension. The classifier sees re
 
 The classifier model is selected in this order:
 
-1. session override from `/automode model provider/model-id` or the interactive model picker;
-2. `autoMode.classifierModel` from config;
-3. the current Pi session model.
+1. `autoMode.classifierModel` from config;
+2. the current Pi session model.
+
+`/automode model provider/model-id` and the interactive model picker save `autoMode.classifierModel` to `~/.pi/agent/automode.json`. Project-local `.pi/automode.local.json` can still override that global choice.
 
 The extension asks Pi's model registry for API credentials. If the model cannot be found or credentials are unavailable, classification returns a blocking decision:
 
@@ -316,4 +317,4 @@ The classifier flow can be inspected or changed through slash commands:
 
 `/auto-mode` is an alias.
 
-`/automode off` disables the whole flow for the current session. `/automode on` re-enables it. `/automode model` only changes the classifier model for the current session; it does not edit config files.
+`/automode off` disables the whole flow for the current session. `/automode on` re-enables it. `/automode model` saves the classifier model to `~/.pi/agent/automode.json`.
