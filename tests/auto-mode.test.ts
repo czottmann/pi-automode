@@ -10,6 +10,7 @@ import {
 	DEFAULT_SOFT_DENY,
 	PI_GLOBAL_SETTINGS,
 	buildEffectiveConfigFromSources,
+	classifyWithRetry,
 	createPiAutomode,
 	deterministicHardDeny,
 	matchesToolPattern,
@@ -348,6 +349,107 @@ test("classifier JSON parser accepts valid decisions and rejects invalid output"
 		parseClassifierDecision({ ...message, content: [{ type: "text", text: "ALLOW because I said so" }] }),
 		undefined,
 	);
+});
+
+function assistantWith(text: string, stopReason = "stop"): AssistantMessage {
+	return {
+		role: "assistant",
+		content: [{ type: "text", text }],
+		api: "test",
+		provider: "test",
+		model: "test",
+		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+		stopReason,
+		timestamp: Date.now(),
+	} satisfies AssistantMessage;
+}
+
+const VALID_ALLOW = '{"decision":"allow","tier":"allow","reason":"read-only"}';
+const GARBAGE = "and I'm ready to go. I'll start by listing the ability to ability to ability to";
+
+function fakeComplete(responses: AssistantMessage[]) {
+	const calls: Array<{ maxTokens: number; temperature: number }> = [];
+	let i = 0;
+	const fn = async (
+		_model: unknown,
+		_options: unknown,
+		callOptions: { maxTokens: number; temperature: number },
+	): Promise<AssistantMessage> => {
+		calls.push({ maxTokens: callOptions.maxTokens, temperature: callOptions.temperature });
+		const res = responses[i];
+		i += 1;
+		return res;
+	};
+	return { fn: fn as never, calls };
+}
+
+test("classifyWithRetry returns a valid decision on the first attempt without retrying", async () => {
+	const { fn, calls } = fakeComplete([assistantWith(VALID_ALLOW)]);
+	const decision = await classifyWithRetry(
+		fn,
+		{ model: { provider: "test", id: "x" } },
+		{ systemPrompt: "s", messages: [] },
+		undefined,
+	);
+	assert.equal(decision.decision, "allow");
+	assert.equal(calls.length, 1);
+});
+
+test("classifyWithRetry recovers when the first response is garbage and the second is valid", async () => {
+	const { fn, calls } = fakeComplete([assistantWith(GARBAGE), assistantWith(VALID_ALLOW)]);
+	const decision = await classifyWithRetry(
+		fn,
+		{ model: { provider: "test", id: "x" } },
+		{ systemPrompt: "s", messages: [] },
+		undefined,
+	);
+	assert.equal(decision.decision, "allow");
+	assert.equal(calls.length, 2);
+});
+
+test("classifyWithRetry recovers from a truncated (stopReason length) response on retry", async () => {
+	const { fn, calls } = fakeComplete([
+		assistantWith(GARBAGE, "length"),
+		assistantWith(VALID_ALLOW),
+	]);
+	const decision = await classifyWithRetry(
+		fn,
+		{ model: { provider: "test", id: "x" } },
+		{ systemPrompt: "s", messages: [] },
+		undefined,
+	);
+	assert.equal(decision.decision, "allow");
+	assert.equal(calls.length, 2);
+});
+
+test("classifyWithRetry fails closed when every attempt returns unparseable output", async () => {
+	const { fn, calls } = fakeComplete([assistantWith(GARBAGE, "length"), assistantWith(GARBAGE)]);
+	const decision = await classifyWithRetry(
+		fn,
+		{ model: { provider: "test", id: "x" } },
+		{ systemPrompt: "s", messages: [] },
+		undefined,
+	);
+	assert.equal(decision.decision, "block");
+	assert.match(decision.reason, /fails closed/);
+	assert.equal(calls.length, 2);
+});
+
+test("classifyWithRetry fails closed immediately without retrying when complete throws", async () => {
+	let calls = 0;
+	const fn = async () => {
+		calls += 1;
+		throw new Error("network down");
+	};
+	const decision = await classifyWithRetry(
+		fn as never,
+		{ model: { provider: "test", id: "x" } },
+		{ systemPrompt: "s", messages: [] },
+		undefined,
+	);
+	assert.equal(decision.decision, "block");
+	assert.match(decision.reason, /Classifier failed/);
+	assert.equal(calls, 1);
 });
 
 test("tool_call hook blocks permissions.deny before deterministic checks and classifier", async () => {

@@ -55,6 +55,24 @@ async function resolveClassifier(
   return { model, apiKey: auth.apiKey, headers: auth.headers };
 }
 
+export type ClassifierCompletionFn = (
+  model: Model<any>,
+  options: { systemPrompt: string; messages: UserMessage[] },
+  callOptions: {
+    apiKey?: string;
+    headers?: Record<string, string>;
+    signal?: AbortSignal;
+    maxTokens: number;
+    temperature: number;
+  },
+) => Promise<AssistantMessage>;
+
+export type RetryOptions = {
+  maxAttempts?: number;
+  maxTokens?: number;
+  temperature?: number;
+};
+
 /** Parse the classifier's JSON-only response. Invalid output is handled fail-closed by the caller. */
 export function parseClassifierDecision(
   message: AssistantMessage,
@@ -90,6 +108,66 @@ export function parseClassifierDecision(
   return undefined;
 }
 
+/**
+ * Call the classifier model and parse its decision, retrying when the model
+ * returns malformed or truncated output. Small classifier models occasionally
+ * ramble into the token cap (stopReason "length") or emit prose instead of
+ * JSON; a single retry recovers most of these transient failures.
+ *
+ * Safety is preserved: an "allow" is only returned when a response actually
+ * parses to a valid allow decision. If every attempt fails to parse, the
+ * function fails closed with a block decision. Thrown errors (network/auth)
+ * are not retried — they fail closed immediately, matching prior behavior.
+ */
+export async function classifyWithRetry(
+  completeFn: ClassifierCompletionFn,
+  classifier: {
+    model: Model<any>;
+    apiKey?: string;
+    headers?: Record<string, string>;
+  },
+  prompt: { systemPrompt: string; messages: UserMessage[] },
+  signal: AbortSignal | undefined,
+  options: RetryOptions = {},
+): Promise<ClassificationDecision> {
+  const maxAttempts = options.maxAttempts ?? 2;
+  const maxTokens = options.maxTokens ?? 1200;
+  const temperature = options.temperature ?? 0;
+  let lastReason =
+    "Classifier response was not valid decision JSON; auto mode fails closed.";
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    let response: AssistantMessage;
+    try {
+      response = await completeFn(
+        classifier.model,
+        prompt,
+        {
+          apiKey: classifier.apiKey,
+          headers: classifier.headers,
+          signal,
+          maxTokens,
+          temperature,
+        },
+      );
+    } catch (error) {
+      return {
+        decision: "block",
+        tier: "none",
+        reason: `Classifier failed; auto mode fails closed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      };
+    }
+    const decision = parseClassifierDecision(response);
+    if (decision) return decision;
+    lastReason =
+      response.stopReason === "length"
+        ? "Classifier response was truncated before producing valid decision JSON; auto mode fails closed."
+        : "Classifier response was not valid decision JSON; auto mode fails closed.";
+  }
+  return { decision: "block", tier: "none", reason: lastReason };
+}
+
 export const defaultClassifyAction: ClassifyAction = async (
   ctx,
   config,
@@ -120,33 +198,10 @@ export const defaultClassifyAction: ClassifyAction = async (
     timestamp: Date.now(),
   };
 
-  try {
-    const response = await complete(
-      classifier.model,
-      { systemPrompt: buildClassifierPrompt(config), messages: [userMessage] },
-      {
-        apiKey: classifier.apiKey,
-        headers: classifier.headers,
-        signal: ctx.signal,
-        maxTokens: 700,
-        temperature: 0,
-      },
-    );
-    return (
-      parseClassifierDecision(response) ?? {
-        decision: "block",
-        tier: "none",
-        reason:
-          "Classifier response was not valid decision JSON; auto mode fails closed.",
-      }
-    );
-  } catch (error) {
-    return {
-      decision: "block",
-      tier: "none",
-      reason: `Classifier failed; auto mode fails closed: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    };
-  }
+  return classifyWithRetry(
+    complete,
+    classifier,
+    { systemPrompt: buildClassifierPrompt(config), messages: [userMessage] },
+    ctx.signal,
+  );
 };
