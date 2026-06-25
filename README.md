@@ -141,6 +141,12 @@ GitHub Actions publishes the package to npm when a GitHub Release is published. 
 
 The workflow uses npm Trusted Publishing, so it does not need an npm token secret. Configure this package on npm with this repository and workflow file (`.github/workflows/publish.yml`). The workflow builds the package, runs `npm run check`, and publishes with npm provenance.
 
+### Release tag must point at the version bump
+
+The publish workflow checks out the commit the release tag points at and compares `package.json` against the tag name. **The tag must point at a commit where `package.json` already carries the new version.** Concretely: commit the version bump (`chore: release X.Y.Z`), push `main`, then create the GitHub release targeting that pushed commit. Creating the release before pushing the version bump — or targeting a commit that still has the old version — fails the `Check release tag` step with `Release tag (vX.Y.Z) does not match package.json version (x.y.z)`.
+
+If the tag was cut against the wrong commit, fix it by force-moving it to the version-bump commit and pushing, then trigger the workflow via `gh workflow run publish.yml --ref vX.Y.Z` (the `release` event fires on tag creation; re-running a failed `release`-triggered run reuses the original ref and won't pick up the moved tag).
+
 ## Author
 
 Carlo Zottmann, <carlo@zottmann.dev>
