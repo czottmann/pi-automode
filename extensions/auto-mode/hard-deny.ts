@@ -170,6 +170,7 @@ function isRootHomeOrSystemPath(path: string): boolean {
     "/usr",
     "/var",
   ];
+  if (path.startsWith(`${HOME}/`)) return false;
   return (
     path === "/" ||
     path === HOME ||
