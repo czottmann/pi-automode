@@ -16,11 +16,15 @@ export function statusLine(
 ): string {
   const enabled = state.enabledOverride ?? config.enabled;
   const circle = enabled ? "●" : "○";
+  const hasActivity = state.checkedActions > 0 || state.blockedActions > 0;
+  if (config.statusStyle === "minimal" && !hasActivity) {
+    return `AM ${circle}`;
+  }
   const allowed = state.checkedActions - state.blockedActions;
   const classifier = state.classifierAllowed > 0 || state.classifierDenied > 0
     ? ` ca:${state.classifierAllowed} cd:${state.classifierDenied}`
     : "";
-  return `AM${circle} a:${allowed} d:${state.blockedActions}${classifier}`;
+  return `AM ${circle} a:${allowed} d:${state.blockedActions}${classifier}`;
 }
 
 export function statusText(
