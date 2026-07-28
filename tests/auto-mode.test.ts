@@ -1504,6 +1504,12 @@ test("statusStyle defaults to full and follows configurable precedence", () => {
 	assert.equal(config.statusStyle, "minimal");
 });
 
+test("statusLine: off style never shows counters", () => {
+	const config = baseConfig({ statusStyle: "off" });
+	const state = baseState({ checkedActions: 18, blockedActions: 3, classifierAllowed: 7, classifierDenied: 5 });
+	assert.equal(statusLine(config, state), "AM ●");
+});
+
 // --- observability logging -------------------------------------------------
 
 test("log config defaults to disabled with classifier I/O off", () => {

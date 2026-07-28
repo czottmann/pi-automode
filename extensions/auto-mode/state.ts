@@ -16,6 +16,9 @@ export function statusLine(
 ): string {
   const enabled = state.enabledOverride ?? config.enabled;
   const circle = enabled ? "●" : "○";
+  if (config.statusStyle === "off") {
+    return `AM ${circle}`;
+  }
   const hasActivity = state.checkedActions > 0 || state.blockedActions > 0;
   if (config.statusStyle === "minimal" && !hasActivity) {
     return `AM ${circle}`;

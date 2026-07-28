@@ -37,7 +37,7 @@ export type LogConfig = {
 };
 
 /** Status line verbosity. */
-export type StatusStyle = "full" | "minimal";
+export type StatusStyle = "full" | "minimal" | "off";
 
 export type AutoModeSettings = {
   enabled?: boolean;
