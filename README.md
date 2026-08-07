@@ -96,6 +96,8 @@ Set a global default classifier model in `~/.pi/agent/automode.json`; override i
 
 The setting follows the normal scalar precedence: global, then project-local, then `PI_AUTOMODE_SETTINGS_JSON`. Shared project `.pi/automode.json` cannot set it. Omitting the key at a higher-precedence scope does not clear a lower-precedence value.
 
+`statusStyle` controls the status line verbosity. `"full"` (default) always shows action counters: `AM ● a:5 d:1`. `"minimal"` shows `AM ●` alone until the first action is checked or blocked, then shows counters. `"off"` never shows counters, displaying only `AM ●` or `AM ○`.
+
 Example:
 
 ```json
