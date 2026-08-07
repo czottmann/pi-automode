@@ -1,8 +1,13 @@
+import { realpathSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { StringEnum } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import {
   classifierReasoningForConfig,
   defaultClassifyAction,
@@ -60,6 +65,34 @@ import type {
   EffectiveConfig,
 } from "./types.ts";
 import { safeJson } from "./utils.ts";
+
+const INSPECT_TOOL = "automode_inspect";
+const INSPECTION_ACTIONS = ["status", "config", "defaults", "denials"] as const;
+type InspectionAction = (typeof INSPECTION_ACTIONS)[number];
+
+function canonicalPath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
+}
+
+const EXTENSION_PATH = canonicalPath(fileURLToPath(import.meta.url));
+const EXTENSION_ENTRY_PATH = canonicalPath(
+  resolve(dirname(EXTENSION_PATH), "../auto-mode.ts"),
+);
+
+export function modelVisibleConfigDiagnostics(
+  diagnostics: string[],
+): string[] {
+  return diagnostics.map((diagnostic) =>
+    diagnostic.replace(
+      /invalid JSON \([\s\S]*\)$/,
+      "invalid JSON (parser details omitted from model-visible output)",
+    )
+  );
+}
 
 export type PiAutomodeOptions = {
   /** Override config loading in tests. Runtime code uses Pi-owned disk settings. */
@@ -147,6 +180,13 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
       };
     }
 
+    function ownsInspectionTool(): boolean {
+      const tool = pi.getAllTools().find(({ name }) => name === INSPECT_TOOL);
+      if (!tool) return false;
+      const sourcePath = canonicalPath(tool.sourceInfo.path);
+      return sourcePath === EXTENSION_PATH || sourcePath === EXTENSION_ENTRY_PATH;
+    }
+
     function persist(): void {
       pi.appendEntry("pi-automode-state", state);
     }
@@ -161,6 +201,74 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
           ? ctx.ui.theme.fg("accent", text)
           : ctx.ui.theme.fg("dim", text),
       );
+    }
+
+    function inspectAutomode(
+      action: InspectionAction,
+      ctx: ExtensionContext,
+    ): unknown {
+      const cfg = effectiveConfig();
+      if (action === "status") {
+        const status = [
+          `enabled: ${cfg.enabled ? "yes" : "no"}`,
+          `classifier: ${cfg.classifierModel ?? "current session model"}`,
+          `classifier reasoning: ${cfg.classifierReasoningLevel ?? "server default"}`,
+          `checked actions: ${state.checkedActions}`,
+          `blocked actions: ${state.blockedActions}`,
+          `classifier allowed: ${state.classifierAllowed}`,
+          `classifier denied: ${state.classifierDenied}`,
+          `permissions.deny rules: ${cfg.permissionDeny.length}`,
+          `permissions.ask rules: ${cfg.permissionAsk.length}`,
+          `environment entries: ${cfg.environment.length}`,
+          `allow entries: ${cfg.allow.length}`,
+          `soft_deny entries: ${cfg.softDeny.length}`,
+          `hard_deny entries: ${cfg.hardDeny.length}`,
+          `last decision: ${state.lastDecision ?? "none"}`,
+          "last reason: omitted from model-visible inspection",
+        ].join("\n");
+        return {
+          status,
+          state: {
+            enabledOverride: state.enabledOverride,
+            lastDecision: state.lastDecision,
+            checkedActions: state.checkedActions,
+            blockedActions: state.blockedActions,
+            classifierAllowed: state.classifierAllowed,
+            classifierDenied: state.classifierDenied,
+          },
+        };
+      }
+      if (action === "config") {
+        return {
+          config: cfg,
+          logFile: resolveLogPath(
+            ctx.sessionManager.getSessionFile?.(),
+            ctx.sessionManager.getSessionDir?.() ?? ctx.cwd,
+            ctx.sessionManager.getSessionId?.() ?? "unknown",
+          ),
+          diagnostics: modelVisibleConfigDiagnostics(configDiagnostics),
+        };
+      }
+      if (action === "defaults") {
+        return {
+          environment: DEFAULT_ENVIRONMENT,
+          allow: DEFAULT_ALLOW,
+          protectedPaths: DEFAULT_PROTECTED_PATHS,
+          soft_deny: DEFAULT_SOFT_DENY,
+          hard_deny: DEFAULT_HARD_DENY,
+        };
+      }
+      const denials = state.recentDenials.slice().reverse().map((denial) => ({
+        timestamp: denial.timestamp,
+        kind: denial.kind,
+        toolName: denial.toolName,
+      }));
+      return {
+        summary: denials.length === 0
+          ? "No recent auto-mode denials."
+          : `${denials.length} recent auto-mode denial(s). Reasons and action payloads are omitted.`,
+        denials,
+      };
     }
 
     function block(
@@ -257,9 +365,11 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
       if (!cfg.enabled) return undefined;
       if (ctx.signal?.aborted) return { block: true, reason: "Cancelled" };
 
+      const isOwnedInspection = event.toolName === INSPECT_TOOL &&
+        ownsInspectionTool();
       const input = event.input as Record<string, unknown>;
       const summary = actionSummary(event.toolName, input);
-      state.checkedActions += 1;
+      if (!isOwnedInspection) state.checkedActions += 1;
       const logCtx: LogCtx = {
         logger: createLogger({
           enabled: cfg.log.enabled,
@@ -275,6 +385,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
 
       for (const pattern of cfg.permissionDeny) {
         if (matchesToolPattern(pattern, event.toolName, input, ctx.cwd)) {
+          if (isOwnedInspection) state.checkedActions += 1;
           return block(ctx, {
             timestamp: Date.now(),
             toolName: event.toolName,
@@ -290,6 +401,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
           continue;
         }
         if (!ctx.hasUI) {
+          if (isOwnedInspection) state.checkedActions += 1;
           return block(ctx, {
             timestamp: Date.now(),
             toolName: event.toolName,
@@ -305,6 +417,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
           { signal: ctx.signal },
         );
         if (!allowed) {
+          if (isOwnedInspection) state.checkedActions += 1;
           return block(ctx, {
             timestamp: Date.now(),
             toolName: event.toolName,
@@ -321,6 +434,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
         ctx.cwd,
       );
       if (deterministicReason) {
+        if (isOwnedInspection) state.checkedActions += 1;
         return block(ctx, {
           timestamp: Date.now(),
           toolName: event.toolName,
@@ -329,6 +443,8 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
           kind: "deterministic-hard-deny",
         }, logCtx);
       }
+
+      if (isOwnedInspection) return undefined;
 
       // Deterministic path gate for file tools.
       //
@@ -429,6 +545,28 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
         action: summary,
         kind: "classifier",
       }, logCtx);
+    });
+
+    pi.registerTool({
+      name: INSPECT_TOOL,
+      label: "Inspect Auto Mode",
+      description:
+        "Inspect the active pi-automode status, effective config, built-in defaults, or recent denial metadata. This tool is read-only and cannot enable, disable, reload, reset, or reconfigure auto mode. Its output is sent to the current model; denial reasons and action payloads are omitted.",
+      promptSnippet:
+        "Inspect active pi-automode state and diagnostic information without changing it",
+      parameters: Type.Object({
+        action: StringEnum(INSPECTION_ACTIONS, {
+          description: "The read-only auto-mode view to return",
+        }),
+      }),
+      async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+        if (signal?.aborted) throw new Error("Auto-mode inspection cancelled");
+        const result = inspectAutomode(params.action, ctx);
+        return {
+          content: [{ type: "text", text: safeJson(result, 16000) }],
+          details: result,
+        };
+      },
     });
 
     async function handleAutomodeCommand(

@@ -43,6 +43,23 @@ pi -e ./extensions/auto-mode.ts
 
 `/auto-mode` is an alias.
 
+## Agent diagnostics
+
+The package registers one model-callable, read-only tool:
+
+`automode_inspect` accepts one `action`:
+
+- `status`: active state and counters
+- `config`: active effective config, log path, and diagnostics
+- `defaults`: built-in rule lists
+- `denials`: recent denial timestamps, kinds, and tool names
+
+The tool reads the same in-memory config and state that the guardrail enforces. After permission and deterministic checks pass, it bypasses classification without changing automode counters, persisted state, or observability logs. The extension verifies tool provenance before applying this exemption, so a name collision does not exempt another extension's implementation. The tool cannot enable, disable, reload, reset, select a model, or change configuration.
+
+Tool output is sent to the current model. The `status` and `denials` views omit denial reasons and action payloads; inspect a known-safe reason from the local observability log when diagnosis requires it. The `config` view includes effective rule text but strips raw JSON parser details from diagnostics. Do not put credentials or other secrets in automode rules.
+
+The bundled `automode-diagnostics` skill uses this tool to diagnose unexpected decisions without asking the user to copy output from slash commands. Configuration edits and automode state changes remain user-controlled.
+
 ## Status line
 
 When the Pi TUI is available, the extension renders a persistent status line:

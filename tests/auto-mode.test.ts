@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import os from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
@@ -24,6 +25,7 @@ import {
 	isRootHomeOrSystemPath,
 	matchesProtectedPath,
 	matchesToolPattern,
+	modelVisibleConfigDiagnostics,
 	newDecisionId,
 	parseClassifierDecision,
 	parseToolPattern,
@@ -41,9 +43,17 @@ import {
 
 type Handler = (event: any, ctx: any) => unknown | Promise<unknown>;
 
+const EXTENSION_SOURCE = realpathSync(
+	join(dirname(fileURLToPath(import.meta.url)), "../extensions/auto-mode.ts"),
+);
+
 function createFakePi() {
 	const handlers = new Map<string, Handler[]>();
 	const commands = new Map<string, { handler: Handler }>();
+	const tools = new Map<string, {
+		execute: (...args: any[]) => any;
+		sourceInfo: { path: string };
+	}>();
 	const entries: any[] = [];
 
 	const pi = {
@@ -56,12 +66,38 @@ function createFakePi() {
 		registerCommand(name: string, command: { handler: Handler }) {
 			commands.set(name, command);
 		},
+		registerTool(tool: {
+			name: string;
+			execute: (...args: any[]) => any;
+			sourceInfo?: { path: string };
+		}) {
+			if (tools.has(tool.name)) return;
+			tools.set(tool.name, {
+				execute: tool.execute,
+				sourceInfo: tool.sourceInfo ?? { path: EXTENSION_SOURCE },
+			});
+		},
+		getAllTools() {
+			return [...tools].map(([name, tool]) => ({
+				name,
+				description: "test tool",
+				parameters: {},
+				promptGuidelines: [],
+				sourceInfo: {
+					path: tool.sourceInfo.path,
+					source: "test",
+					scope: "temporary",
+					origin: "package",
+				},
+			}));
+		},
 	} as any;
 
 	return {
 		pi,
 		entries,
 		commands,
+		tools,
 		async emit(event: string, payload: any, ctx: any) {
 			let lastResult: unknown;
 			for (const handler of handlers.get(event) ?? []) {
@@ -182,6 +218,174 @@ async function setupHookTest(options: {
 	await fake.emit("session_start", { type: "session_start" }, ctx);
 	return { ...fake, ctx, get classifierCalls() { return classifierCalls; } };
 }
+
+test("automode_inspect bypasses classification without changing state or logs", async () => {
+	const dir = mkdtempSync(join(os.tmpdir(), "pi-automode-inspect-"));
+	try {
+		const sessionFile = join(dir, "session.jsonl");
+		const ctx = createFakeCtx([], { sessionFile });
+		const hook = await setupHookTest({
+			config: baseConfig({ log: { enabled: true, classifierIo: true } }),
+			ctx,
+		});
+		const result = await hook.emit(
+			"tool_call",
+			{ toolName: "automode_inspect", input: { action: "status" } },
+			ctx,
+		);
+		assert.equal(result, undefined);
+		assert.equal(hook.classifierCalls, 0);
+		assert.equal(hook.entries.length, 0);
+		assert.equal(existsSync(join(dir, "session-pi-automode.jsonl")), false);
+
+		const output = await hook.tools.get("automode_inspect")?.execute(
+			"call-1",
+			{ action: "status" },
+			undefined,
+			undefined,
+			ctx,
+		);
+		const parsed = JSON.parse(output.content[0].text);
+		assert.equal(parsed.state.checkedActions, 0);
+		assert.equal(parsed.state.blockedActions, 0);
+		assert.equal(hook.entries.length, 0);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("automode_inspect still obeys explicit permission denies", async () => {
+	const pattern = parseToolPattern("automode_inspect");
+	assert.ok(pattern);
+	const hook = await setupHookTest({
+		config: baseConfig({ permissionDeny: [pattern] }),
+	});
+	const result = await hook.emit(
+		"tool_call",
+		{ toolName: "automode_inspect", input: { action: "status" } },
+		hook.ctx,
+	);
+	assert.deepEqual(result, {
+		block: true,
+		reason: "[pi-automode] Blocked by permissions.deny: automode_inspect",
+	});
+	assert.equal(hook.classifierCalls, 0);
+	assert.equal(hook.entries.at(-1)?.data.checkedActions, 1);
+	assert.equal(hook.entries.at(-1)?.data.blockedActions, 1);
+});
+
+test("a colliding tool from another extension is not exempted", async () => {
+	const fake = createFakePi();
+	fake.pi.registerTool({
+		name: "automode_inspect",
+		sourceInfo: { path: "/tmp/other-extension.ts" },
+		async execute() {
+			return { content: [{ type: "text", text: "other" }] };
+		},
+	});
+	let classifierCalls = 0;
+	createPiAutomode({
+		loadConfig: () => baseConfig(),
+		classifyAction: async () => {
+			classifierCalls += 1;
+			return { decision: "allow", tier: "none", reason: "test allow" };
+		},
+	})(fake.pi);
+	const ctx = createFakeCtx(fake.entries);
+	await fake.emit("session_start", { type: "session_start" }, ctx);
+	await fake.emit(
+		"tool_call",
+		{ toolName: "automode_inspect", input: { action: "status" } },
+		ctx,
+	);
+	assert.equal(classifierCalls, 1);
+	assert.equal(fake.entries.at(-1)?.data.checkedActions, 1);
+});
+
+test("automode_inspect reports the active in-memory config", async () => {
+	const fake = createFakePi();
+	let current = baseConfig({ classifierModel: "test/model-a" });
+	createPiAutomode({ loadConfig: () => current })(fake.pi);
+	const ctx = createFakeCtx(fake.entries);
+	await fake.emit("session_start", { type: "session_start" }, ctx);
+	current = baseConfig({ classifierModel: "test/model-b" });
+
+	const output = await fake.tools.get("automode_inspect")?.execute(
+		"call-2",
+		{ action: "config" },
+		undefined,
+		undefined,
+		ctx,
+	);
+	assert.equal(JSON.parse(output.content[0].text).config.classifierModel, "test/model-a");
+});
+
+test("automode_inspect omits denial reasons and action payloads", async () => {
+	const fake = createFakePi();
+	const persistedState = {
+		type: "custom",
+		customType: "pi-automode-state",
+		data: baseState({
+			checkedActions: 1,
+			blockedActions: 1,
+			classifierDenied: 1,
+			lastDecision: "block",
+			lastReason: "SECRET_REASON_MARKER",
+			recentDenials: [{
+				timestamp: 123,
+				kind: "classifier",
+				toolName: "bash",
+				reason: "contains-sensitive-reason",
+				action: "bash contains-sensitive-action",
+			}],
+		}),
+	};
+	createPiAutomode({ loadConfig: () => baseConfig() })(fake.pi);
+	const ctx = createFakeCtx([persistedState]);
+	await fake.emit("session_start", { type: "session_start" }, ctx);
+
+	const denialOutput = await fake.tools.get("automode_inspect")?.execute(
+		"call-3",
+		{ action: "denials" },
+		undefined,
+		undefined,
+		ctx,
+	);
+	assert.doesNotMatch(JSON.stringify(denialOutput), /contains-sensitive/);
+	assert.deepEqual(JSON.parse(denialOutput.content[0].text).denials, [{
+		timestamp: 123,
+		kind: "classifier",
+		toolName: "bash",
+	}]);
+
+	const statusOutput = await fake.tools.get("automode_inspect")?.execute(
+		"call-4",
+		{ action: "status" },
+		undefined,
+		undefined,
+		ctx,
+	);
+	assert.doesNotMatch(JSON.stringify(statusOutput), /SECRET_REASON_MARKER/);
+});
+
+test("model-visible config diagnostics omit JSON parser excerpts", () => {
+	const diagnostics = modelVisibleConfigDiagnostics([
+		"PI_AUTOMODE_SETTINGS_JSON: invalid JSON (Unexpected token near SECRET_VALUE)",
+		"/tmp/automode.json: unknown autoMode key typo",
+	]);
+	assert.deepEqual(diagnostics, [
+		"PI_AUTOMODE_SETTINGS_JSON: invalid JSON (parser details omitted from model-visible output)",
+		"/tmp/automode.json: unknown autoMode key typo",
+	]);
+	assert.doesNotMatch(diagnostics.join("\n"), /SECRET_VALUE/);
+});
+
+test("automode exposes one read-only inspection tool", () => {
+	const fake = createFakePi();
+	createPiAutomode({ loadConfig: () => baseConfig() })(fake.pi);
+	assert.deepEqual([...fake.tools.keys()], ["automode_inspect"]);
+	assert.deepEqual([...fake.commands.keys()], ["automode", "auto-mode"]);
+});
 
 test("global config path uses Pi agent config directory", () => {
 	assert.match(PI_GLOBAL_SETTINGS[0] ?? "", /\.pi\/agent\/automode\.json$/);
