@@ -36,6 +36,9 @@ export type LogConfig = {
   classifierIo: boolean;
 };
 
+/** Status line verbosity. */
+export type StatusStyle = "full" | "minimal" | "off";
+
 export type AutoModeSettings = {
   enabled?: boolean;
   classifierModel?: string;
@@ -52,6 +55,7 @@ export type AutoModeSettings = {
   deniedPaths?: unknown;
   maxUserTranscriptTokens?: number;
   maxToolTranscriptTokens?: number;
+  statusStyle?: StatusStyle;
   environment?: unknown;
   allow?: unknown;
   protectedPaths?: unknown;
@@ -93,6 +97,7 @@ export type EffectiveConfig = {
   deniedPaths: string[];
   maxUserTranscriptTokens: number;
   maxToolTranscriptTokens: number;
+  statusStyle: StatusStyle;
   environment: string[];
   allow: string[];
   protectedPaths: string[];

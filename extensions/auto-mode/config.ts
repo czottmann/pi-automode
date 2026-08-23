@@ -410,6 +410,7 @@ function applyAutoModeScalars(
     ...base,
     enabled: settings.enabled ?? base.enabled,
     classifierModel: settings.classifierModel ?? base.classifierModel,
+    statusStyle: settings.statusStyle ?? base.statusStyle,
     classifierReasoningLevel: isClassifierReasoningLevel(
         settings.classifierReasoningLevel,
       )
@@ -475,6 +476,7 @@ export function buildEffectiveConfigFromSources(
     classifierTimeoutMs: DEFAULT_CLASSIFIER_TIMEOUT_MS,
     maxUserTranscriptTokens: DEFAULT_MAX_USER_TRANSCRIPT_TOKENS,
     maxToolTranscriptTokens: DEFAULT_MAX_TOOL_TRANSCRIPT_TOKENS,
+    statusStyle: "full",
     environment: [...DEFAULT_ENVIRONMENT],
     allow: [...DEFAULT_ALLOW],
     protectedPaths: [...DEFAULT_PROTECTED_PATHS],
