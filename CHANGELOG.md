@@ -8,6 +8,10 @@ All notable changes to this project are documented in this file.
 
 - **[Bounded existing-file authorization](docs/defaults.md#soft_deny)** — Allow user authorization for pre-existing local-file changes that names task, worktree, path scope, and allowed operation. (#32)
 
+## Bug fixes
+
+- **OpenCode session header on classifier requests** — Send `x-opencode-session` and `x-opencode-client` when classifying with an OpenCode or OpenCode Go model. OpenCode began rejecting requests without that header on 2026-09-06, which made every classified tool call fail closed. (#35)
+
 ## [1.15.0] - 2026-08-28
 
 ## Bug fixes

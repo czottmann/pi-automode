@@ -280,7 +280,45 @@ async function completeSimpleWithRegistry(
 ): Promise<AssistantMessage> {
   const provider = registry.getProvider?.(model.provider);
   if (!provider) throw new Error(`Unknown provider: ${model.provider}`);
-  return provider.streamSimple(model, context, options).result();
+  return provider.streamSimple(model, context, withSessionHeaders(model, options))
+    .result();
+}
+
+/**
+ * OpenCode rejects requests without `x-opencode-session` (HTTP 400
+ * MissingSessionID) since 2026-09-06. Pi attaches that header in the Agent's
+ * streamFn, which the classifier bypasses by calling the provider directly, so
+ * it has to be added here. `options.sessionId` is already the stable
+ * per-session id from `classifierCacheSessionId()`.
+ */
+function withSessionHeaders(
+  model: Model<any>,
+  options: Parameters<ClassifierCompletionFn>[2],
+): Parameters<ClassifierCompletionFn>[2] {
+  const extra = openCodeSessionHeaders(model, options.sessionId);
+  if (!extra) return options;
+  return { ...options, headers: { ...options.headers, ...extra } };
+}
+
+function openCodeSessionHeaders(
+  model: Model<any>,
+  sessionId: string | undefined,
+): Record<string, string> | undefined {
+  if (!sessionId) return undefined;
+  const isOpenCode = model.provider === "opencode" ||
+    model.provider === "opencode-go" ||
+    /(^|\.)opencode\.ai$/i.test(safeHost(model.baseUrl));
+  if (!isOpenCode) return undefined;
+  return { "x-opencode-session": sessionId, "x-opencode-client": "pi" };
+}
+
+function safeHost(baseUrl: string | undefined): string {
+  if (!baseUrl) return "";
+  try {
+    return new URL(baseUrl).hostname;
+  } catch {
+    return "";
+  }
 }
 
 const DETAILED_CLASSIFIER_MAX_TOKENS = 1200;
