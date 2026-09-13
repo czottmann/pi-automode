@@ -1084,6 +1084,14 @@ test("fastClassifierMaxTokens defaults to 512 and is configurable", () => {
 	assert.equal(config.fastClassifierMaxTokens, 2048);
 });
 
+test("classifierDetailedMaxTokens defaults to 1200 and is configurable", () => {
+	assert.equal(buildEffectiveConfigFromSources({}).classifierDetailedMaxTokens, 1200);
+	const config = buildEffectiveConfigFromSources({
+		globalSettings: [{ autoMode: { classifierDetailedMaxTokens: 2400 } }],
+	});
+	assert.equal(config.classifierDetailedMaxTokens, 2400);
+});
+
 test("classifierTimeoutMs defaults to 20000 and is configurable", () => {
 	assert.equal(buildEffectiveConfigFromSources({}).classifierTimeoutMs, 20_000);
 	const config = buildEffectiveConfigFromSources({
@@ -1107,6 +1115,16 @@ test("validateSettingsFile rejects fastClassifierMaxTokens below 16", () => {
 	);
 	assert.ok(
 		diagnostics.some((d) => /fastClassifierMaxTokens must be an integer of at least 16/.test(d)),
+	);
+});
+
+test("validateSettingsFile rejects classifierDetailedMaxTokens below 16", () => {
+	const diagnostics = validateSettingsFile(
+		{ autoMode: { classifierDetailedMaxTokens: 8 } },
+		"inline",
+	);
+	assert.ok(
+		diagnostics.some((d) => /classifierDetailedMaxTokens must be an integer of at least 16/.test(d)),
 	);
 });
 
@@ -1148,7 +1166,7 @@ test("validateSettingsFile rejects unknown autoMode keys including classifierTim
 
 test("validateSettingsFile accepts valid classifyReadOnlyTools and fastClassifierMaxTokens", () => {
 	const diagnostics = validateSettingsFile(
-		{ autoMode: { classifyReadOnlyTools: true, fastClassifierMaxTokens: 1024 } },
+		{ autoMode: { classifyReadOnlyTools: true, fastClassifierMaxTokens: 1024, classifierDetailedMaxTokens: 1024 } },
 		"inline",
 	);
 	assert.equal(diagnostics.length, 0);

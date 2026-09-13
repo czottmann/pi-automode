@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## New features
+
+- **Configurable detailed-stage classifier budget** — Add `autoMode.classifierDetailedMaxTokens` (default 1200, minimum 16). Reasoning classifiers that spend the detailed-stage budget on hidden reasoning before the decision JSON can raise the limit instead of failing closed on truncation. (#39)
+
 ## [1.16.0] - 2026-09-07
 
 ## New features

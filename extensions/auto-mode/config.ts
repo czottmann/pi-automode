@@ -14,6 +14,7 @@ import {
   DEFAULT_CLASSIFIER_TIMEOUT_MS,
   DEFAULT_CLASSIFY_READ_ONLY_TOOLS,
   DEFAULT_DENIED_PATHS,
+  DEFAULT_DETAILED_CLASSIFIER_MAX_TOKENS,
   DEFAULT_ENVIRONMENT,
   DEFAULT_FAST_CLASSIFIER_MAX_TOKENS,
   DEFAULT_HARD_DENY,
@@ -283,6 +284,7 @@ export function validateSettingsFile(
         "classifierTimeoutMs",
         "classifyReadOnlyTools",
         "fastClassifierMaxTokens",
+        "classifierDetailedMaxTokens",
         "allowInsideWorkingDirectory",
         "deniedPaths",
         "maxUserTranscriptTokens",
@@ -347,6 +349,15 @@ export function validateSettingsFile(
       ) {
         diagnostics.push(
           `${source}: autoMode.fastClassifierMaxTokens must be an integer of at least 16`,
+        );
+      }
+      if (
+        hasOwn(autoMode, "classifierDetailedMaxTokens") &&
+        (!Number.isInteger(autoMode.classifierDetailedMaxTokens) ||
+          (autoMode.classifierDetailedMaxTokens as number) < 16)
+      ) {
+        diagnostics.push(
+          `${source}: autoMode.classifierDetailedMaxTokens must be an integer of at least 16`,
         );
       }
       if (
@@ -588,7 +599,7 @@ function validTranscriptBudget(value: unknown): value is number {
   return Number.isInteger(value) && Number(value) >= 32;
 }
 
-function validFastClassifierBudget(value: unknown): value is number {
+function validClassifierBudget(value: unknown): value is number {
   return Number.isInteger(value) && Number(value) >= 16;
 }
 
@@ -619,11 +630,16 @@ function applyAutoModeScalars(
       typeof settings.allowInsideWorkingDirectory === "boolean"
         ? settings.allowInsideWorkingDirectory
         : base.allowInsideWorkingDirectory,
-    fastClassifierMaxTokens: validFastClassifierBudget(
+    fastClassifierMaxTokens: validClassifierBudget(
         settings.fastClassifierMaxTokens,
       )
       ? settings.fastClassifierMaxTokens
       : base.fastClassifierMaxTokens,
+    classifierDetailedMaxTokens: validClassifierBudget(
+        settings.classifierDetailedMaxTokens,
+      )
+      ? settings.classifierDetailedMaxTokens
+      : base.classifierDetailedMaxTokens,
     classifierTimeoutMs: validClassifierTimeout(settings.classifierTimeoutMs)
       ? settings.classifierTimeoutMs
       : base.classifierTimeoutMs,
@@ -674,6 +690,7 @@ export function buildEffectiveConfigFromSources(
     allowInsideWorkingDirectory: DEFAULT_ALLOW_INSIDE_WORKING_DIRECTORY,
     deniedPaths: [...DEFAULT_DENIED_PATHS],
     fastClassifierMaxTokens: DEFAULT_FAST_CLASSIFIER_MAX_TOKENS,
+    classifierDetailedMaxTokens: DEFAULT_DETAILED_CLASSIFIER_MAX_TOKENS,
     classifierTimeoutMs: DEFAULT_CLASSIFIER_TIMEOUT_MS,
     maxUserTranscriptTokens: DEFAULT_MAX_USER_TRANSCRIPT_TOKENS,
     maxToolTranscriptTokens: DEFAULT_MAX_TOOL_TRANSCRIPT_TOKENS,

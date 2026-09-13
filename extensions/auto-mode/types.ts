@@ -44,6 +44,8 @@ export type AutoModeSettings = {
   classifyReadOnlyTools?: boolean;
   /** Override the fast-stage completion token budget (default 512). */
   fastClassifierMaxTokens?: number;
+  /** Override the detailed-stage completion token budget (default 1200). */
+  classifierDetailedMaxTokens?: number;
   /** Per-request timeout for classifier completions in milliseconds (default 20000). */
   classifierTimeoutMs?: number;
   /** When true, file tools whose resolved path is inside the working directory are allowed deterministically (no classifier), and outside-CWD file access is classified. */
@@ -93,6 +95,7 @@ export type EffectiveConfig = {
   classifierReasoningLevel?: ClassifierReasoningLevel;
   classifyReadOnlyTools: boolean;
   fastClassifierMaxTokens: number;
+  classifierDetailedMaxTokens: number;
   classifierTimeoutMs: number;
   allowInsideWorkingDirectory: boolean;
   deniedPaths: string[];
