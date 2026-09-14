@@ -211,6 +211,13 @@ export const DEFAULT_CLASSIFY_READ_ONLY_TOOLS = false;
 export const DEFAULT_FAST_CLASSIFIER_MAX_TOKENS = 512;
 
 /**
+ * Default upper bound on detailed-stage completion tokens. Reasoning tokens
+ * share this budget, so a reasoning classifier can stop on `length` before it
+ * emits the decision JSON.
+ */
+export const DEFAULT_DETAILED_CLASSIFIER_MAX_TOKENS = 1200;
+
+/**
  * Default behavior: no deterministic inside-working-directory tier; every
  * non-read-only action is classified. When enabled, file tools whose resolved
  * path is inside the working directory are allowed deterministically, and

@@ -506,6 +506,7 @@ test("classifier action size checks fail closed instead of truncating", () => {
 			32_000,
 			undefined,
 			512,
+			1200,
 			"policy",
 			"context",
 			action,
@@ -518,6 +519,7 @@ test("classifier action size checks fail closed instead of truncating", () => {
 			32_000,
 			undefined,
 			512,
+			1200,
 			"policy",
 			"context",
 			action,
@@ -530,11 +532,45 @@ test("classifier action size checks fail closed instead of truncating", () => {
 			32_000,
 			undefined,
 			512,
+			1200,
 			"policy",
 			"context",
 			action,
 		) ?? "",
 		/no valid context-window limit.*fails closed/,
+	);
+});
+
+test("classifier action size checks use the configured detailed budget", () => {
+	const action = serializeClassifierAction("write", {
+		path: "/tmp/project/output.txt",
+		content: "x".repeat(10_000),
+	});
+	assert.equal(
+		classifierActionLimitReason(
+			40_000,
+			32_000,
+			undefined,
+			512,
+			1200,
+			"policy",
+			"context",
+			action,
+		),
+		undefined,
+	);
+	assert.match(
+		classifierActionLimitReason(
+			40_000,
+			32_000,
+			undefined,
+			512,
+			40_000,
+			"policy",
+			"context",
+			action,
+		) ?? "",
+		/Exact tool input cannot fit.*fails closed/,
 	);
 });
 
@@ -549,6 +585,7 @@ test("classifier action size checks reserve explicit reasoning budgets", () => {
 			32_000,
 			"low",
 			512,
+			1200,
 			"policy",
 			"context",
 			action,
@@ -562,6 +599,7 @@ test("classifier action size checks reserve explicit reasoning budgets", () => {
 				32_000,
 				level,
 				512,
+				1200,
 				"policy",
 				"context",
 				action,
@@ -750,6 +788,42 @@ test("classifyInStages forwards the timeout to fast and detailed calls", async (
 
 	assert.equal(decision.decision, "allow");
 	assert.deepEqual(calls.map((call) => call.timeoutMs), [5000, 5000]);
+});
+
+test("classifyInStages uses the 1200-token default budget for the detailed call", async () => {
+	const { fn, calls } = fakeComplete([
+		assistantWith("1"),
+		assistantWith(VALID_ALLOW),
+	]);
+	const decision = await classifyInStages(
+		fn,
+		{ model: { provider: "test", id: "x" } },
+		stagedPrompt(),
+		undefined,
+		{ sessionId: "pi-automode:test-session" },
+	);
+
+	assert.equal(decision.decision, "allow");
+	assert.equal(calls[0]?.maxTokens, 512);
+	assert.equal(calls[1]?.maxTokens, 1200);
+});
+
+test("classifyInStages forwards the configured budget to the detailed call only", async () => {
+	const { fn, calls } = fakeComplete([
+		assistantWith("1"),
+		assistantWith(VALID_ALLOW),
+	]);
+	const decision = await classifyInStages(
+		fn,
+		{ model: { provider: "test", id: "x" } },
+		stagedPrompt(),
+		undefined,
+		{ sessionId: "pi-automode:test-session", classifierDetailedMaxTokens: 2400 },
+	);
+
+	assert.equal(decision.decision, "allow");
+	assert.equal(calls[0]?.maxTokens, 512);
+	assert.equal(calls[1]?.maxTokens, 2400);
 });
 
 test("classifyInStages aborts a pending fast stage at the configured deadline", async () => {

@@ -148,6 +148,7 @@ export function baseConfig(overrides: Partial<EffectiveConfig> = {}): EffectiveC
 		allowInsideWorkingDirectory: false,
 		deniedPaths: [],
 		fastClassifierMaxTokens: 512,
+		classifierDetailedMaxTokens: 1200,
 		classifierTimeoutMs: 20_000,
 		maxUserTranscriptTokens: 4000,
 		maxToolTranscriptTokens: 4000,
