@@ -15,7 +15,8 @@ import {
   resolve,
 } from "node:path";
 import { fileURLToPath } from "node:url";
-import { HOME, PATH_BEARING_TOOLS, PROFILE_FILES } from "./constants.ts";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { CONFIG_DIR_NAME, HOME, PATH_BEARING_TOOLS, PROFILE_FILES } from "./constants.ts";
 
 const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
 
@@ -236,9 +237,7 @@ export function isSafetyControlPath(path: string, cwd: string): boolean {
   const policyCwd = resolvePathForPolicy(cwd) ?? resolve(cwd);
   const normalized = normalizeProtectedPathForMatch(policyPath);
   const file = basename(normalized);
-  const piAgentRoot = normalizeProtectedPathForMatch(
-    resolve(HOME, ".pi/agent"),
-  );
+  const piAgentRoot = normalizeProtectedPathForMatch(getAgentDir());
   const globalExtensions = `${piAgentRoot}/extensions`;
   const globalSettings = `${piAgentRoot}/settings`;
   if (
@@ -251,15 +250,15 @@ export function isSafetyControlPath(path: string, cwd: string): boolean {
     return true;
   }
   if (
-    normalized.endsWith("/.pi/auto-mode.json") ||
+    normalized.endsWith(`/${CONFIG_DIR_NAME}/auto-mode.json`) ||
     normalized.endsWith("/auto-mode.json")
   ) {
     return true;
   }
-  if (normalized.includes("/.pi/extensions/") && file.includes("auto")) {
+  if (normalized.includes(`/${CONFIG_DIR_NAME}/extensions/`) && file.includes("auto")) {
     return true;
   }
-  if (normalized.includes("/.pi/") && file.startsWith("automode")) return true;
+  if (normalized.includes(`/${CONFIG_DIR_NAME}/`) && file.startsWith("automode")) return true;
   if (
     normalized.includes("/pi-automode/") ||
     (isInside(policyPath, policyCwd) && file.includes("auto-mode"))

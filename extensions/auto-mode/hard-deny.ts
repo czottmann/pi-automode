@@ -7,7 +7,7 @@ import {
   type BashCommandAnalysis,
   type EffectiveCommand,
 } from "./bash.ts";
-import { HOME } from "./constants.ts";
+import { CONFIG_DIR_NAME, HOME } from "./constants.ts";
 import {
   isProfileOrAuthorizedKeysPath,
   isSafetyControlPath,
@@ -256,6 +256,7 @@ function segmentHardDeny(
   if (!name) return undefined;
   const args = command.args;
   const lowerArgs = args.map((arg) => arg.toLowerCase());
+  const raw = segment.raw.toLowerCase();
 
   if (
     ["curl", "wget"].includes(name) &&
@@ -372,9 +373,10 @@ function segmentHardDeny(
       "sd",
       "sed",
     ].includes(name) &&
-    /\.pi\/automode|\.pi\/extensions|pi-automode|auto-mode\.json/i.test(
-      segment.raw,
-    )
+    (raw.includes(`${CONFIG_DIR_NAME}/automode`) ||
+      raw.includes(`${CONFIG_DIR_NAME}/extensions`) ||
+      raw.includes("pi-automode") ||
+      raw.includes("auto-mode.json"))
   ) {
     return "auto-mode or permission safety-control modification is hard-denied";
   }

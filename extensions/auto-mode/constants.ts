@@ -1,5 +1,8 @@
 import os from "node:os";
 import { resolve } from "node:path";
+import { CONFIG_DIR_NAME, getAgentDir } from "@earendil-works/pi-coding-agent";
+
+export { CONFIG_DIR_NAME };
 
 export const HOME = os.homedir();
 
@@ -14,7 +17,7 @@ export const DEFAULT_PROTECTED_PATHS = [
   ".devcontainer",
   ".yarn",
   ".mvn",
-  ".pi",
+  CONFIG_DIR_NAME,
   ".gitconfig",
   ".gitmodules",
   ".gitignore",
@@ -168,12 +171,18 @@ Valid decision/tier combinations:
 - block: hard_deny, soft_deny, or none
 If an allow exception or explicit user intent overrides a soft-deny rule, return allow with tier allow or explicit_intent, never soft_deny.`;
 
-export const PI_GLOBAL_SETTINGS = [
-  resolve(HOME, ".pi/agent/extensions/pi-automode/config.json"),
-];
-export const PI_LEGACY_GLOBAL_SETTINGS = resolve(HOME, ".pi/agent/automode.json");
-export const PI_PROJECT_LOCAL_SETTINGS = [".pi/automode.local.json"];
-export const PI_PROJECT_SHARED_SETTINGS = [".pi/automode.json"];
+/** Extension-owned global config paths inside the effective agent directory. */
+export function piGlobalSettingsPaths(): string[] {
+  return [resolve(getAgentDir(), "extensions/pi-automode/config.json")];
+}
+
+/** Legacy global settings path migrated to the extension directory at startup. */
+export function piLegacyGlobalSettingsPath(): string {
+  return resolve(getAgentDir(), "automode.json");
+}
+
+export const PI_PROJECT_LOCAL_SETTINGS = [`${CONFIG_DIR_NAME}/automode.local.json`];
+export const PI_PROJECT_SHARED_SETTINGS = [`${CONFIG_DIR_NAME}/automode.json`];
 
 export const PROFILE_FILES = new Set([
   resolve(HOME, ".bashrc"),

@@ -23,10 +23,10 @@ import {
   DEFAULT_PROTECTED_PATHS,
   DEFAULT_SOFT_DENY,
   MAX_CLASSIFIER_TIMEOUT_MS,
-  PI_GLOBAL_SETTINGS,
-  PI_LEGACY_GLOBAL_SETTINGS,
   PI_PROJECT_LOCAL_SETTINGS,
   PI_PROJECT_SHARED_SETTINGS,
+  piGlobalSettingsPaths,
+  piLegacyGlobalSettingsPath,
 } from "./constants.ts";
 import {
   MAX_WILDCARD_PATTERN_LENGTH,
@@ -138,8 +138,8 @@ function globalConfigConflict(
 export function prepareGlobalConfig(
   options: PrepareGlobalConfigOptions = {},
 ): GlobalConfigPreparation {
-  const currentPath = options.currentPath ?? PI_GLOBAL_SETTINGS[0];
-  const legacyPath = options.legacyPath ?? PI_LEGACY_GLOBAL_SETTINGS;
+  const currentPath = options.currentPath ?? piGlobalSettingsPaths()[0];
+  const legacyPath = options.legacyPath ?? piLegacyGlobalSettingsPath();
   const currentExists = existsSync(currentPath);
   const legacyExists = existsSync(legacyPath);
   const unlinkFile = options.unlinkFile ?? unlinkSync;
@@ -787,7 +787,7 @@ function ignoredSharedAllowDiagnostics(
 export function loadEffectiveConfigWithDiagnostics(
   cwd: string,
   projectTrusted = false,
-  globalSettingsPath = PI_GLOBAL_SETTINGS[0],
+  globalSettingsPath = piGlobalSettingsPaths()[0],
 ): ConfigLoadResult {
   const inlineSettings: SettingsFile[] = [];
   const diagnostics: string[] = [];
@@ -859,7 +859,7 @@ export function loadEffectiveConfigWithDiagnostics(
 export function loadEffectiveConfig(
   cwd: string,
   projectTrusted = false,
-  globalSettingsPath = PI_GLOBAL_SETTINGS[0],
+  globalSettingsPath = piGlobalSettingsPaths()[0],
 ): EffectiveConfig {
   return loadEffectiveConfigWithDiagnostics(
     cwd,
@@ -889,7 +889,7 @@ function readWritableSettingsFile(path: string): SettingsFile {
 /** Persist the global default classifier model while preserving other settings. */
 export function writeGlobalClassifierModel(
   classifierModel: string,
-  path = PI_GLOBAL_SETTINGS[0],
+  path = piGlobalSettingsPaths()[0],
 ): void {
   const settings = readWritableSettingsFile(path);
   const next: SettingsFile = {
