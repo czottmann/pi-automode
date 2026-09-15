@@ -8,6 +8,7 @@ import {
 	buildClassifierTranscript,
 	classifierActionLimitReason,
 	classifierCacheSessionId,
+	classifierDetailedMaxTokens,
 	classifyInStages,
 	classifyWithRetry,
 	createClassifierCompletionPlan,
@@ -571,6 +572,41 @@ test("classifier action size checks reserve explicit reasoning budgets", () => {
 	}
 });
 
+test("classifier action size checks cap the reserve at the model output limit", () => {
+	const action = serializeClassifierAction("write", {
+		path: "/tmp/project/output.txt",
+		content: "x".repeat(10_000),
+	});
+	// The model output limit bounds the reserve, so an explicit reasoning level
+	// cannot turn a fitting action into a zero-budget block on a small model.
+	for (const level of ["low", "high"] as const) {
+		assert.equal(
+			classifierActionLimitReason(
+				20_000,
+				2_000,
+				level,
+				512,
+				"policy",
+				"context",
+				action,
+			),
+			undefined,
+		);
+	}
+});
+
+test("classifier detailed ceiling stays inside the model context window", () => {
+	assert.equal(
+		classifierDetailedMaxTokens(20_000, 20_000, 1_000, "x".repeat(1_000)),
+		20_000 - 4_096 - 1_000 - 1_000,
+	);
+	assert.equal(classifierDetailedMaxTokens(200_000, 32_000, 1_000, "x"), 32_000);
+	assert.equal(
+		classifierDetailedMaxTokens(10_000, 32_000, 6_000, "x".repeat(10_000)),
+		1,
+	);
+});
+
 test("default classifier blocks oversized exact actions before a model call", async () => {
 	const action = serializeClassifierAction("write", {
 		path: "/tmp/project/output.txt",
@@ -596,6 +632,61 @@ test("default classifier blocks oversized exact actions before a model call", as
 	assert.match(result.reason, /Exact tool input cannot fit.*without truncation/);
 	assert.equal(result.io?.prompt.action, action);
 	assert.deepEqual(result.io?.attempts, []);
+});
+
+async function classifyActionMaxTokens(model: any): Promise<number[]> {
+	const maxTokensSeen: number[] = [];
+	const ctx = createFakeCtx([], {
+		model,
+		modelRegistry: {
+			find: () => model,
+			getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key" }),
+			async complete(_model: unknown, _context: unknown, options: { maxTokens: number }) {
+				maxTokensSeen.push(options.maxTokens);
+				return maxTokensSeen.length === 1 ? assistantWith("1") : assistantWith(VALID_ALLOW);
+			},
+		},
+	});
+	const result = await defaultClassifyAction(
+		ctx as never,
+		baseConfig(),
+		'{"toolName":"bash","input":{"command":"echo ok"}}',
+		"",
+	);
+
+	assert.equal(result.decision, "allow");
+	assert.equal(maxTokensSeen.length, 2);
+	return maxTokensSeen;
+}
+
+test("default classifier caps the detailed request to the context window", async () => {
+	const model = {
+		provider: "test",
+		id: "small-window",
+		contextWindow: 20_000,
+		maxTokens: 20_000,
+		reasoning: false,
+	} as any;
+
+	const maxTokensSeen = await classifyActionMaxTokens(model);
+
+	assert.equal(maxTokensSeen[0], 512);
+	assert.equal(maxTokensSeen[1] < model.maxTokens, true);
+	assert.equal(maxTokensSeen[1] > 1200, true);
+});
+
+test("default classifier keeps a model output limit below the context room", async () => {
+	const model = {
+		provider: "test",
+		id: "small-limit",
+		contextWindow: 200_000,
+		maxTokens: 5_000,
+		reasoning: false,
+	} as any;
+
+	const maxTokensSeen = await classifyActionMaxTokens(model);
+
+	assert.equal(maxTokensSeen[1], model.maxTokens);
 });
 
 test("tool hook sends complete bash, write, and structured inputs to classification", async () => {
@@ -716,6 +807,25 @@ test("classifyInStages runs detailed review and retries with the same cached pre
 	assert.match(JSON.stringify(calls[1]?.messages), /never soft_deny/);
 	assert.deepEqual(attempts.map((attempt) => attempt.stage), ["fast", "detailed", "detailed"]);
 	assert.equal(attempts[0]?.response?.text, " 1\n");
+});
+
+test("classifyInStages sends the detailed stage the classifier model's output limit", async () => {
+	const { fn, calls } = fakeComplete([
+		assistantWith("1"),
+		assistantWith(VALID_ALLOW),
+	]);
+	const decision = await classifyInStages(
+		fn,
+		{ model: { provider: "test", id: "x", maxTokens: 32_000 } as never },
+		stagedPrompt(),
+		undefined,
+		{ sessionId: "pi-automode:test-session" },
+	);
+
+	assert.equal(decision.decision, "allow");
+	assert.equal(calls.length, 2);
+	assert.equal(calls[0]?.maxTokens, 512);
+	assert.equal(calls[1]?.maxTokens, 32_000);
 });
 
 test("classifyInStages forwards one reasoning level to fast and detailed calls", async () => {

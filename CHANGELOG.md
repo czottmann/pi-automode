@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## Bug fixes
+
+- **Time-bounded detailed classifier** — Send the detailed stage the classifier model's own output limit, capped to the remaining context window, instead of the fixed 1200-token ceiling. `classifierTimeoutMs` bounds each request, so a reasoning classifier is far less likely to truncate before emitting decision JSON on providers that count reasoning tokens against the ceiling. The context-fit reserve keeps a conservative answer allowance, bounded by the model limit. (#42)
+
 ## [1.16.0] - 2026-09-07
 
 ## New features

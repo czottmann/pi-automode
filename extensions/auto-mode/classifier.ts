@@ -190,6 +190,7 @@ export function createRegistryCompletionFns(
 
 export type RetryOptions = {
   maxAttempts?: number;
+  /** Override the detailed-stage output ceiling; falls back to the classifier model's own limit. */
   maxTokens?: number;
   temperature?: number;
   /** Per-request timeout in milliseconds; falls back to the provider default when undefined. */
@@ -206,6 +207,8 @@ export type StagedClassifierOptions = {
   sessionId: string;
   /** Override the fast-stage token budget; falls back to the default (512). */
   fastClassifierMaxTokens?: number;
+  /** Override the detailed-stage output ceiling; falls back to the classifier model's own limit. */
+  detailedMaxTokens?: number;
   /** Per-request timeout in milliseconds; falls back to the provider default when undefined. */
   timeoutMs?: number;
   reasoningLevel?: Exclude<EffectiveClassifierReasoningLevel, "off">;
@@ -319,7 +322,13 @@ async function completeSimpleWithRegistry(
   return provider.streamSimple(model, context, options).result();
 }
 
-const DETAILED_CLASSIFIER_MAX_TOKENS = 1200;
+/**
+ * Output room reserved for the visible classifier answer in the context-fit
+ * check. It is not a request ceiling: the detailed stage sends the classifier
+ * model's own output limit, capped to the context window, and
+ * `classifierTimeoutMs` bounds each request.
+ */
+const DETAILED_ANSWER_ALLOWANCE_TOKENS = 1200;
 // Match Pi AI's context clamp safety reserve.
 const CLASSIFIER_CONTEXT_MARGIN_TOKENS = 4096;
 const CLASSIFIER_ACTION_LABEL =
@@ -345,6 +354,45 @@ export function buildClassifierActionMessage(action: string): UserMessage {
 }
 
 /**
+ * Conservative UTF-8 byte upper bound for the fixed classifier input. Both
+ * stage instructions are counted, so the bound covers either request.
+ */
+export function classifierFixedInputUpperBound(
+  systemPrompt: string,
+  contextText: string,
+): number {
+  return Buffer.byteLength(
+    [
+      systemPrompt,
+      contextText,
+      CLASSIFIER_ACTION_LABEL,
+      CLASSIFIER_FAST_INSTRUCTION,
+      CLASSIFIER_DETAILED_INSTRUCTION,
+    ].join("\n"),
+    "utf8",
+  );
+}
+
+/**
+ * Cap the detailed request's output ceiling so the byte-conservative input
+ * upper bound plus the ceiling stay inside the context window. Raw provider
+ * paths forward `maxTokens` without Pi's own context clamp, so the detailed
+ * stage uses this ceiling instead of the bare model limit.
+ */
+export function classifierDetailedMaxTokens(
+  contextWindow: number,
+  modelMaxTokens: number,
+  fixedInputUpperBound: number,
+  action: string,
+): number {
+  const available = contextWindow -
+    CLASSIFIER_CONTEXT_MARGIN_TOKENS -
+    fixedInputUpperBound -
+    Buffer.byteLength(action, "utf8");
+  return Math.max(1, Math.min(modelMaxTokens, available));
+}
+
+/**
  * Return a fail-closed reason when the exact action cannot fit in the model
  * context. UTF-8 bytes are used as a conservative upper bound for input tokens.
  */
@@ -363,9 +411,9 @@ export function classifierActionLimitReason(
   if (!Number.isFinite(modelMaxTokens) || modelMaxTokens <= 0) {
     return "Classifier model has no valid output-token limit; auto mode fails closed.";
   }
-  const baseOutputTokens = Math.max(
+  const answerAllowance = Math.max(
     fastClassifierMaxTokens,
-    DETAILED_CLASSIFIER_MAX_TOKENS,
+    DETAILED_ANSWER_ALLOWANCE_TOKENS,
   );
   const reasoningBudget = reasoningLevel === undefined
     ? 0
@@ -378,18 +426,12 @@ export function classifierActionLimitReason(
       max: 16384,
     }[reasoningLevel];
   const outputReserve = Math.min(
-    baseOutputTokens + reasoningBudget,
+    answerAllowance + reasoningBudget,
     modelMaxTokens,
   );
-  const fixedInputUpperBound = Buffer.byteLength(
-    [
-      systemPrompt,
-      contextText,
-      CLASSIFIER_ACTION_LABEL,
-      CLASSIFIER_FAST_INSTRUCTION,
-      CLASSIFIER_DETAILED_INSTRUCTION,
-    ].join("\n"),
-    "utf8",
+  const fixedInputUpperBound = classifierFixedInputUpperBound(
+    systemPrompt,
+    contextText,
   );
   const availableActionBytes = Math.max(
     0,
@@ -557,7 +599,9 @@ function classifierFailure(
 
 /**
  * Call the detailed classifier and parse its decision, retrying malformed or
- * truncated output. Provider errors and exhausted retries fail closed.
+ * truncated output. The request ceiling is the caller's value, or the
+ * classifier model's own output limit when none is given; `classifierTimeoutMs`
+ * is the operative bound. Provider errors and exhausted retries fail closed.
  */
 export async function classifyWithRetry(
   completeFn: ClassifierCompletionFn,
@@ -572,7 +616,7 @@ export async function classifyWithRetry(
   options: RetryOptions = {},
 ): Promise<ClassificationDecision> {
   const maxAttempts = options.maxAttempts ?? 2;
-  const maxTokens = options.maxTokens ?? DETAILED_CLASSIFIER_MAX_TOKENS;
+  const maxTokens = options.maxTokens ?? classifier.model.maxTokens;
   const temperature = options.temperature;
   const stage = options.stage ?? "detailed";
   const onAttempt = options.onAttempt;
@@ -745,6 +789,9 @@ export async function classifyInStages(
       cacheRetention: "short",
       timeoutMs: options.timeoutMs,
       reasoningLevel: options.reasoningLevel,
+      ...(options.detailedMaxTokens === undefined
+        ? {}
+        : { maxTokens: options.detailedMaxTokens }),
       onAttempt: options.onAttempt,
     },
   );
@@ -824,6 +871,12 @@ export const defaultClassifyAction: ClassifyAction = async (
     };
   }
   const actionMessage = buildClassifierActionMessage(action);
+  const detailedMaxTokens = classifierDetailedMaxTokens(
+    classifier.model.contextWindow,
+    classifier.model.maxTokens,
+    classifierFixedInputUpperBound(systemPrompt, contextText),
+    action,
+  );
   const decision = await classifyInStages(
     completionPlan.completeFn,
     classifier,
@@ -832,6 +885,7 @@ export const defaultClassifyAction: ClassifyAction = async (
     {
       sessionId: classifierCacheSessionId(ctx),
       fastClassifierMaxTokens: config.fastClassifierMaxTokens,
+      detailedMaxTokens,
       timeoutMs: config.classifierTimeoutMs,
       reasoningLevel: completionPlan.reasoningLevel,
       onAttempt: (attempt) => attempts.push(attempt),

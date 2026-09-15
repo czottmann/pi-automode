@@ -333,9 +333,9 @@ When the key is absent, classifier calls omit a reasoning preference. The server
 
 Pi AI clamps the request to the nearest supported level. Models without reasoning support resolve to `off`. They remain on the normalized path without a reasoning preference.
 
-Reasoning does not increase the stage token limits. A high level can use all stage tokens before it produces valid visible output. Truncation fails closed.
+The fast stage uses `maxTokens: 512` by default. Reasoning can consume hidden tokens before the visible digit appears. Truncation fails closed; raise `fastClassifierMaxTokens` if the fast stage truncates.
 
-The fast-stage limit is 512 tokens. The detailed-stage limit is 1200 tokens. `low` matches the reasoning effort of Codex Auto Review.
+The detailed stage sends the classifier model's own output limit, capped to the room left in the context window. `classifierTimeoutMs` ends requests that keep generating; the token cap only bounds output size. `low` matches the reasoning effort of Codex Auto Review.
 
 The extension asks Pi's model registry for API credentials. If the model cannot be found or credentials are unavailable, classification returns a blocking decision:
 
@@ -349,9 +349,9 @@ Classifier calls use `ctx.signal`, a stable classifier-specific session ID, and 
 
 If a request exceeds its budget, pi-automode aborts it and blocks the action. A stalled provider stream has the same result.
 
-The fast stage requires one visible digit and uses `maxTokens: 512`. Reasoning models can use hidden tokens before they emit the digit.
+The fast stage requires one visible digit. Reasoning models can use hidden tokens before they emit the digit.
 
-Extra visible content fails parsing. Detailed review uses `maxTokens: 1200`. It can retry once after malformed or truncated output.
+Extra visible content fails parsing. Detailed review uses the classifier model's own output limit, capped to the context window. It can retry once after malformed or truncated output.
 
 ## Parsing the classifier result
 
