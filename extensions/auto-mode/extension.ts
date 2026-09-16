@@ -38,7 +38,11 @@ import {
   resolveLogPath,
   type Logger,
 } from "./log.ts";
-import { formatModelSpec, parseModelSpec } from "./model.ts";
+import {
+  classifierModelForProvider,
+  formatModelSpec,
+  parseModelSpec,
+} from "./model.ts";
 import { promptForClassifierModel } from "./model-selector.ts";
 import {
   matchesAllowedToolPatterns,
@@ -267,7 +271,10 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
       if (action === "status") {
         const status = [
           `enabled: ${cfg.enabled ? "yes" : "no"}`,
-          `classifier: ${cfg.classifierModel ?? "current session model"}`,
+          `classifier: ${
+            classifierModelForProvider(cfg, ctx.model?.provider) ??
+              "current session model"
+          }`,
           `classifier reasoning: ${cfg.classifierReasoningLevel ?? "server default"}`,
           `checked actions: ${state.checkedActions}`,
           `blocked actions: ${state.blockedActions}`,
@@ -480,7 +487,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
           now: now(),
         }),
         decisionId: newDecisionId(),
-        classifierModel: cfg.classifierModel,
+        classifierModel: classifierModelForProvider(cfg, ctx.model?.provider),
         reasoning: classifierReasoningForConfig(cfg.classifierReasoningLevel),
       };
 
@@ -790,7 +797,10 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
       const remainder = rest.join(" ").trim();
 
       if (command === "status") {
-        ctx.ui.notify(statusText(effectiveConfig(), state), "info");
+        ctx.ui.notify(
+          statusText(effectiveConfig(), state, ctx.model?.provider),
+          "info",
+        );
         return;
       }
       if (command === "on") {

@@ -13,7 +13,11 @@ import {
   CLASSIFIER_SYSTEM_PROMPT,
   DEFAULT_FAST_CLASSIFIER_MAX_TOKENS,
 } from "./constants.ts";
-import { formatModelSpec, parseModelSpec } from "./model.ts";
+import {
+  classifierModelForProvider,
+  formatModelSpec,
+  parseModelSpec,
+} from "./model.ts";
 import { buildClassifierTranscript } from "./transcript.ts";
 import type {
   ClassificationDecision,
@@ -69,7 +73,7 @@ async function resolveClassifier(
   ctx: ExtensionContext,
   config: EffectiveConfig,
 ): Promise<ClassifierResolution> {
-  const configured = config.classifierModel;
+  const configured = classifierModelForProvider(config, ctx.model?.provider);
   const model = configured
     ? (() => {
       const parsed = parseModelSpec(configured);

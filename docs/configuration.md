@@ -30,6 +30,29 @@ This file is project-local. Pi reads it only after project trust. Do not commit 
 
 Set a global default classifier model in `~/.pi/agent/extensions/pi-automode/config.json`. For a trusted project, override it in `.pi/automode.local.json`.
 
+Use `classifierModelByProvider` to select a classifier from the current session
+model's provider. Provider-specific entries take precedence over
+`classifierModel`; unmatched providers fall back to `classifierModel`, then to
+the current session model. The provider is resolved for every classifier call,
+so changing the session model switches the classifier without a reload.
+
+```json
+{
+  "autoMode": {
+    "classifierModel": "fallback/provider-model",
+    "classifierModelByProvider": {
+      "anthropic": "anthropic/claude-haiku-4-5",
+      "openai-codex": "openai-codex/gpt-5.6-luna"
+    }
+  }
+}
+```
+
+Maps merge across global, project-local, and inline settings. A
+higher-precedence source replaces only the providers it names. The
+`/automode model` command updates `classifierModel`, not provider-specific
+entries.
+
 `classifierReasoningLevel` requests `low`, `medium`, `high`, `xhigh`, or `max` reasoning for both classifier stages. If the key is absent, pi-automode sends no reasoning preference. The server then selects the level.
 
 Pi AI clamps an unsupported value to the nearest level that the selected model supports. A model without reasoning support resolves to `off`. `low` matches the reasoning effort of Codex Auto Review.
@@ -68,6 +91,10 @@ Example:
 {
   "autoMode": {
     "classifierModel": "provider/model-id",
+    "classifierModelByProvider": {
+      "anthropic": "anthropic/claude-haiku-4-5",
+      "openai-codex": "openai-codex/gpt-5.6-luna"
+    },
     "classifierReasoningLevel": "low",
     "classifyReadOnlyTools": false,
     "fastClassifierMaxTokens": 512,

@@ -770,6 +770,68 @@ test("project-local classifier model overrides global classifier model", () => {
 	assert.equal(config.classifierModel, "project/model");
 });
 
+test("classifier models by provider merge across config scopes", () => {
+	const config = buildEffectiveConfigFromSources({
+		globalSettings: [{
+			autoMode: {
+				classifierModel: "fallback/model",
+				classifierModelByProvider: {
+					anthropic: "anthropic/claude-haiku-4-5",
+					"openai-codex": "openai-codex/gpt-5.4-mini",
+				},
+			},
+		}],
+		projectLocalSettings: [{
+			autoMode: {
+				classifierModelByProvider: {
+					"openai-codex": "openai-codex/gpt-5.6-luna",
+				},
+			},
+		}],
+	});
+
+	assert.equal(config.classifierModel, "fallback/model");
+	assert.deepEqual(config.classifierModelByProvider, {
+		anthropic: "anthropic/claude-haiku-4-5",
+		"openai-codex": "openai-codex/gpt-5.6-luna",
+	});
+});
+
+test("classifier models by provider validate object keys and model specs", () => {
+	assert.deepEqual(
+		validateSettingsFile({
+			autoMode: {
+				classifierModelByProvider: {
+					anthropic: "anthropic/claude-haiku-4-5",
+					"openai-codex": "openai-codex/gpt-5.6-luna",
+				},
+			},
+		}, "inline"),
+		[],
+	);
+
+	const diagnostics = validateSettingsFile({
+		autoMode: {
+			classifierModelByProvider: {
+				"": "anthropic/claude-haiku-4-5",
+				anthropic: 42,
+			},
+		},
+	}, "inline");
+	assert.equal(
+		diagnostics.some((line) =>
+			line.includes("autoMode.classifierModelByProvider keys must be non-empty provider names")
+		),
+		true,
+	);
+	assert.equal(
+		diagnostics.some((line) =>
+			line.includes("autoMode.classifierModelByProvider.anthropic must be a provider/model string")
+		),
+		true,
+	);
+});
+
 test("classifier reasoning level defaults to server choice and follows configurable precedence", () => {
 	assert.equal(buildEffectiveConfigFromSources({}).classifierReasoningLevel, undefined);
 

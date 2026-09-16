@@ -279,6 +279,7 @@ export function validateSettingsFile(
       const knownAutoMode = new Set([
         "enabled",
         "classifierModel",
+        "classifierModelByProvider",
         "classifierReasoningLevel",
         "classifierTimeoutMs",
         "classifyReadOnlyTools",
@@ -314,6 +315,11 @@ export function validateSettingsFile(
           `${source}: autoMode.classifierModel must be a provider/model string`,
         );
       }
+      validateClassifierModelByProvider(
+        autoMode.classifierModelByProvider,
+        source,
+        diagnostics,
+      );
       if (
         hasOwn(autoMode, "classifierReasoningLevel") &&
         !isClassifierReasoningLevel(autoMode.classifierReasoningLevel)
@@ -490,6 +496,32 @@ function finalizeRuleSetting(accumulator: RuleAccumulator): string[] {
   return [...new Set([...base, ...accumulator.entries])];
 }
 
+function validateClassifierModelByProvider(
+  value: unknown,
+  source: string,
+  diagnostics: string[],
+): void {
+  if (value === undefined) return;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    diagnostics.push(
+      `${source}: autoMode.classifierModelByProvider must be an object mapping provider names to provider/model strings`,
+    );
+    return;
+  }
+  for (const [provider, model] of Object.entries(value)) {
+    if (provider.trim() === "") {
+      diagnostics.push(
+        `${source}: autoMode.classifierModelByProvider keys must be non-empty provider names`,
+      );
+    }
+    if (typeof model !== "string" || model.trim() === "") {
+      diagnostics.push(
+        `${source}: autoMode.classifierModelByProvider.${provider} must be a provider/model string`,
+      );
+    }
+  }
+}
+
 function validateLogSetting(
   value: unknown,
   source: string,
@@ -598,6 +630,20 @@ function validClassifierTimeout(value: unknown): value is number {
     Number(value) <= MAX_CLASSIFIER_TIMEOUT_MS;
 }
 
+function validClassifierModelsByProvider(
+  value: unknown,
+): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] =>
+        entry[0].trim() !== "" &&
+        typeof entry[1] === "string" &&
+        entry[1].trim() !== "",
+    ),
+  );
+}
+
 function applyAutoModeScalars(
   base: EffectiveConfig,
   settings: AutoModeSettings | undefined,
@@ -607,6 +653,10 @@ function applyAutoModeScalars(
     ...base,
     enabled: typeof settings.enabled === "boolean" ? settings.enabled : base.enabled,
     classifierModel: settings.classifierModel ?? base.classifierModel,
+    classifierModelByProvider: {
+      ...base.classifierModelByProvider,
+      ...validClassifierModelsByProvider(settings.classifierModelByProvider),
+    },
     classifierReasoningLevel: isClassifierReasoningLevel(
         settings.classifierReasoningLevel,
       )
@@ -672,6 +722,7 @@ export function buildEffectiveConfigFromSources(
     enabled: true,
     classifyReadOnlyTools: DEFAULT_CLASSIFY_READ_ONLY_TOOLS,
     allowInsideWorkingDirectory: DEFAULT_ALLOW_INSIDE_WORKING_DIRECTORY,
+    classifierModelByProvider: {},
     deniedPaths: [...DEFAULT_DENIED_PATHS],
     fastClassifierMaxTokens: DEFAULT_FAST_CLASSIFIER_MAX_TOKENS,
     classifierTimeoutMs: DEFAULT_CLASSIFIER_TIMEOUT_MS,
