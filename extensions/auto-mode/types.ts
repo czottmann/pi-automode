@@ -39,6 +39,8 @@ export type LogConfig = {
 export type AutoModeSettings = {
   enabled?: boolean;
   classifierModel?: string;
+  /** Classifier model overrides keyed by the current session model's provider. */
+  classifierModelByProvider?: unknown;
   classifierReasoningLevel?: ClassifierReasoningLevel;
   /** When true, read-only tools (read/grep/find/ls) are classified instead of auto-allowed. */
   classifyReadOnlyTools?: boolean;
@@ -90,6 +92,7 @@ export type ToolPattern = {
 export type EffectiveConfig = {
   enabled: boolean;
   classifierModel?: string;
+  classifierModelByProvider?: Record<string, string>;
   classifierReasoningLevel?: ClassifierReasoningLevel;
   classifyReadOnlyTools: boolean;
   fastClassifierMaxTokens: number;

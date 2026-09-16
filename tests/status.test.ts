@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+	classifierModelForProvider,
 	parseToolPattern,
 	statusLine,
 	statusText,
@@ -15,6 +16,28 @@ test("statusText reports the permissions.allow rule count", () => {
 	assert.ok(pattern);
 	const text = statusText(baseConfig({ permissionAllow: [pattern] }), baseState());
 	assert.match(text, /permissions\.allow rules: 1/);
+});
+
+test("statusText reports the classifier selected for the session provider", () => {
+	const text = statusText(
+		baseConfig({
+			classifierModel: "fallback/model",
+			classifierModelByProvider: {
+				anthropic: "anthropic/claude-haiku-4-5",
+			},
+		}),
+		baseState(),
+		"anthropic",
+	);
+	assert.match(text, /^classifier: anthropic\/claude-haiku-4-5$/m);
+});
+
+test("classifier routing ignores inherited object keys", () => {
+	const config = baseConfig({ classifierModel: "fallback/model" });
+	assert.equal(
+		classifierModelForProvider(config, "toString"),
+		"fallback/model",
+	);
 });
 
 test("statusText reports server-default classifier reasoning", () => {

@@ -343,6 +343,93 @@ test("default classifier sends OpenCode session headers through raw registry com
 	assert.equal(calls[0]?.options.headers["x-opencode-client"], "pi");
 });
 
+test("classifier model follows the current session provider", async () => {
+	const sessionModels = {
+		openai: { provider: "openai-codex", id: "gpt-5.6-sol" },
+		anthropic: { provider: "anthropic", id: "claude-opus-4-6" },
+		other: { provider: "google", id: "gemini-3-pro" },
+	};
+	const classifierModels = [
+		{
+			provider: "openai-codex",
+			id: "gpt-5.6-luna",
+			api: "openai-responses",
+			reasoning: false,
+			contextWindow: 128_000,
+			maxTokens: 4096,
+		},
+		{
+			provider: "anthropic",
+			id: "claude-haiku-4-5",
+			api: "anthropic-messages",
+			reasoning: false,
+			contextWindow: 128_000,
+			maxTokens: 4096,
+		},
+		{
+			provider: "fallback",
+			id: "model",
+			api: "test-api",
+			reasoning: false,
+			contextWindow: 128_000,
+			maxTokens: 4096,
+		},
+	];
+	const finds: Array<{ provider: string; id: string }> = [];
+	const calls: Array<{ provider: string; id: string }> = [];
+	const ctx = createFakeCtx([], {
+		model: sessionModels.openai,
+		modelRegistry: {
+			find(provider: string, id: string) {
+				finds.push({ provider, id });
+				return classifierModels.find((model) =>
+					model.provider === provider && model.id === id
+				);
+			},
+			getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "runtime-key" }),
+			async complete(model: { provider: string; id: string }) {
+				calls.push({ provider: model.provider, id: model.id });
+				return assistantWith("0");
+			},
+		},
+	});
+	const config = baseConfig({
+		classifierModel: "fallback/model",
+		classifierModelByProvider: {
+			"openai-codex": "openai-codex/gpt-5.6-luna",
+			anthropic: "anthropic/claude-haiku-4-5",
+		},
+	});
+
+	await defaultClassifyAction(
+		ctx as never,
+		config,
+		'{"toolName":"bash","input":{"command":"echo openai"}}',
+		"",
+	);
+	ctx.model = sessionModels.anthropic;
+	await defaultClassifyAction(
+		ctx as never,
+		config,
+		'{"toolName":"bash","input":{"command":"echo anthropic"}}',
+		"",
+	);
+	ctx.model = sessionModels.other;
+	await defaultClassifyAction(
+		ctx as never,
+		config,
+		'{"toolName":"bash","input":{"command":"echo fallback"}}',
+		"",
+	);
+
+	assert.deepEqual(finds, [
+		{ provider: "openai-codex", id: "gpt-5.6-luna" },
+		{ provider: "anthropic", id: "claude-haiku-4-5" },
+		{ provider: "fallback", id: "model" },
+	]);
+	assert.deepEqual(calls, finds);
+});
+
 test("runtime provider simple completion preserves reasoning and adds OpenCode session headers", async () => {
 	const model = {
 		provider: "opencode",

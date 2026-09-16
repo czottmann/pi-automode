@@ -49,6 +49,9 @@ pi -e ./extensions/auto-mode.ts
 
 `/auto-mode` is an alias.
 
+`autoMode.classifierModelByProvider` can select a different classifier for each
+current session provider. See [Configuration](docs/configuration.md).
+
 ## Agent diagnostics
 
 The package registers one model-callable, read-only tool:

@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## New features
+
+- **Provider-aware classifier routing** - Select classifier models by the current session provider with `autoMode.classifierModelByProvider`, falling back to `classifierModel` or the session model. (#44)
+
 ## [1.16.0] - 2026-09-07
 
 ## New features

@@ -320,6 +320,23 @@ test("tool_call logs blocked classifier decisions to the session log file", asyn
 	}
 });
 
+test("tool_call logs the classifier routed for the session provider", async () => {
+	const t = await setupLogTest({
+		config: baseConfig({
+			classifierModel: "fallback/model",
+			classifierModelByProvider: { test: "test/routed-classifier" },
+			log: { enabled: true, classifierIo: false },
+		}),
+	});
+	try {
+		await t.fake.emit("tool_call", { toolName: "bash", input: { command: "npm publish" } }, t.ctx);
+		const entry = JSON.parse(readFileSync(t.logPath, "utf8").trim());
+		assert.equal(entry.classifierModel, "test/routed-classifier");
+	} finally {
+		rmSync(t.dir, { recursive: true, force: true });
+	}
+});
+
 test("tool_call logs effective explicit reasoning when classifier authentication is unavailable", async () => {
 	const dir = mkdtempSync(join(os.tmpdir(), "pi-automode-log-"));
 	try {

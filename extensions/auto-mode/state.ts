@@ -1,4 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { classifierModelForProvider } from "./model.ts";
 import { DENIAL_HISTORY_LIMIT } from "./constants.ts";
 import type { AutoModeState, DenialRecord, EffectiveConfig } from "./types.ts";
 import { safeJson, truncateMiddle } from "./utils.ts";
@@ -26,10 +27,14 @@ export function statusLine(
 export function statusText(
   config: EffectiveConfig,
   state: AutoModeState,
+  sessionProvider?: string,
 ): string {
   return [
     `enabled: ${(state.enabledOverride ?? config.enabled) ? "yes" : "no"}`,
-    `classifier: ${config.classifierModel ?? "current session model"}`,
+    `classifier: ${
+      classifierModelForProvider(config, sessionProvider) ??
+        "current session model"
+    }`,
     `classifier reasoning: ${config.classifierReasoningLevel ?? "server default"}`,
     `checked actions: ${state.checkedActions}`,
     `blocked actions: ${state.blockedActions}`,
