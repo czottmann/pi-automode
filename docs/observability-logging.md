@@ -120,16 +120,20 @@ The entry follows all related classifier-usage `message` entries. It precedes th
 | --- | --- |
 | `ts` | ISO timestamp |
 | `decisionId` | matches the `decision` entry for the same call |
-| `model` | classifier model, for example `anthropic/claude-haiku-4` |
+| `model` | classifier model, for example `anthropic/claude-haiku-4`, or `jev-1.13.0` for the Jev backend |
+| `provider` | classifier backend that produced the decision (`pi`, `auto`, `jev-prefilter`, `jev`); absent for pre-provider entries |
+| `jev` | Jev branch, present only for Jev-routed decisions: `{ provider: "jev", model, state, questions, answers, failureReason?, fallback }` where `fallback` is `none`, `escalate`, `classifier`, or `block` |
 | `reasoning` | `server-default`, or the explicit requested and effective model-supported level |
-| `prompt.system` | the full system policy with `environment`/`allow`/`soft_deny`/`hard_deny` rules interpolated |
+| `prompt.system` | the full system policy with `environment`/`allow`/`soft_deny`/`hard_deny` rules interpolated (empty for Jev: rule lists become questions) |
 | `prompt.context` | the shared context message: loaded project instructions + classifier transcript |
 | `prompt.action` | the complete, untruncated current tool action JSON |
 | `prompt.fastInstruction` | the exact one-token filter instruction |
 | `prompt.detailedInstruction` | the exact structured-review instruction |
-| `attempts` | one entry per classifier model call (see below) |
+| `attempts` | one entry per classifier model call (see below); empty for Jev (one `judge()` call, recorded in `jev.answers`) |
 | `durationMs` | total classifier time |
 | `parsed` | the final decision that was acted on (`{ decision, tier, reason }`) |
+
+Tune Jev thresholds from this entry: `jev.answers` holds the per-rule Noul probabilities (`hard_N`/`soft_N`/`allow_N`/`explicit_auth`) and the `severity` score. A decision with `jev.fallback: "escalate"` ran the detailed generative stage after a review band; `"classifier"` fell back after a failure; `"block"` failed closed. No credential material ever appears in the entry.
 
 Each `attempts[]` entry is `{ stage, attempt, response?, parsed?, error?, durationMs }`:
 
@@ -138,7 +142,7 @@ Each `attempts[]` entry is `{ stage, attempt, response?, parsed?, error?, durati
 - `parsed` — the decision parsed from the response, or absent after a parse failure.
 - `error` — present after a network or authentication error. In this case, `response` is absent.
 
-The array records both stages, retries, and fail-closed cases. A fast allow has one entry. A review with one successful retry has three entries.
+The array records both stages, retries, and fail-closed cases. A fast allow has one entry. A review with one successful retry has three entries. Jev decisions record no attempts (one `judge()` call lives in `jev.answers`); `ccusage`-compatible `message` entries are likewise absent for Jev's non-chat judgment API.
 
 ## Privacy
 

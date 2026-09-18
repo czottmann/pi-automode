@@ -12,6 +12,14 @@ Pi-automode does not guard user `!` or `!!` shell commands. It guards only agent
 
 Pi-automode supports Pi and Oh My Pi (OMP) 18. It automatically uses OMP's legacy completion API. The integration needs no OMP-specific configuration.
 
+TypeSafe's Jev model is an opt-in classifier backend on OMP only. It needs OMP ≥ 18.2.4, a TypeSafe credential (`/login typesafe` or `TYPESAFE_API_KEY`), and one config line:
+
+```json
+{ "autoMode": { "classifierProvider": "jev-prefilter" } }
+```
+
+With no new configuration nothing changes: the generative classifier stays the default. Stock Pi is unaffected — on a machine without the OMP judgment API the gate is inert and the existing classifier runs. `classifierProvider` values are `"pi"` (default), `"auto"`, `"jev-prefilter"`, and `"jev"`; `jev.onFailure` is `"classifier"` (fall back) or `"block"` (fail closed). See [Configuration → Classifier provider](docs/configuration.md#classifier-provider-jev-opt-in).
+
 ## Install
 
 From npm:
@@ -86,6 +94,7 @@ AM● a:12 d:2 ca:5 cd:1
 - `a:` — actions allowed so far (checked minus denied).
 - `d:` — actions denied so far, for any reason (permission rule, deterministic hard-deny, or classifier).
 - `ca:` / `cd:` — classifier decisions split into allowed and denied. These segments appear after the first classifier call. `d:` counts all denials, so `d:` is always `>= cd:`.
+- `j:` — Jev gate. Appears only when `classifierProvider` is not `"pi"`. `●` means Jev is answering; `○` means the gate did not pass and the existing classifier is running. Run `/automode status` or `/automode config` for the reason.
 
 ## Docs
 

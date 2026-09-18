@@ -33,6 +33,8 @@ export type ClassifierLogEntry = {
   decisionId: string;
   model: string;
   reasoning: ClassifierIo["reasoning"];
+  provider?: ClassifierIo["provider"];
+  jev?: ClassifierIo["jev"];
   prompt: ClassifierIo["prompt"];
   attempts: ClassifierIoAttempt[];
   durationMs: number;

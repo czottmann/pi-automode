@@ -2,6 +2,8 @@ import { realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+	DEFAULT_CLASSIFIER_PROVIDER,
+	DEFAULT_JEV_CONFIG,
 	DEFAULT_LOG_CONFIG,
 	DEFAULT_PROTECTED_PATHS,
 	analyzeBash,
@@ -144,6 +146,8 @@ export function createFakeCtx(entries: any[] = [], overrides: Record<string, unk
 export function baseConfig(overrides: Partial<EffectiveConfig> = {}): EffectiveConfig {
 	return {
 		enabled: true,
+		classifierProvider: DEFAULT_CLASSIFIER_PROVIDER,
+		jev: { ...DEFAULT_JEV_CONFIG },
 		classifyReadOnlyTools: false,
 		allowInsideWorkingDirectory: false,
 		deniedPaths: [],

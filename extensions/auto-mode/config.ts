@@ -10,6 +10,8 @@ import {
 import { dirname, resolve } from "node:path";
 import {
   DEFAULT_ALLOW,
+  DEFAULT_CLASSIFIER_PROVIDER,
+  DEFAULT_JEV_CONFIG,
   DEFAULT_ALLOW_INSIDE_WORKING_DIRECTORY,
   DEFAULT_CLASSIFIER_TIMEOUT_MS,
   DEFAULT_CLASSIFY_READ_ONLY_TOOLS,
@@ -34,9 +36,12 @@ import {
 } from "./permissions.ts";
 import type {
   AutoModeSettings,
+  ClassifierProvider,
   ClassifierReasoningLevel,
   ConfigLoadResult,
   EffectiveConfig,
+  JevConfig,
+  JevFailurePolicy,
   LoadedSettingsFile,
   LogConfig,
   SettingsFile,
@@ -279,6 +284,8 @@ export function validateSettingsFile(
       const knownAutoMode = new Set([
         "enabled",
         "classifierModel",
+        "classifierProvider",
+        "jev",
         "classifierReasoningLevel",
         "classifierTimeoutMs",
         "classifyReadOnlyTools",
@@ -314,6 +321,15 @@ export function validateSettingsFile(
           `${source}: autoMode.classifierModel must be a provider/model string`,
         );
       }
+      if (
+        hasOwn(autoMode, "classifierProvider") &&
+        !isClassifierProvider(autoMode.classifierProvider)
+      ) {
+        diagnostics.push(
+          `${source}: autoMode.classifierProvider must be one of pi, auto, jev-prefilter, jev`,
+        );
+      }
+      validateJevSetting(autoMode.jev, source, diagnostics);
       if (
         hasOwn(autoMode, "classifierReasoningLevel") &&
         !isClassifierReasoningLevel(autoMode.classifierReasoningLevel)
@@ -597,6 +613,139 @@ function validClassifierTimeout(value: unknown): value is number {
     Number(value) >= 1000 &&
     Number(value) <= MAX_CLASSIFIER_TIMEOUT_MS;
 }
+export function isClassifierProvider(value: unknown): value is ClassifierProvider {
+  return value === "pi" ||
+    value === "auto" ||
+    value === "jev-prefilter" ||
+    value === "jev";
+}
+
+export function isJevFailurePolicy(value: unknown): value is JevFailurePolicy {
+  return value === "classifier" || value === "block";
+}
+
+function validJevThreshold(value: unknown): value is number {
+  return typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= 1;
+}
+
+function validJevMaxQuestions(value: unknown): value is number {
+  return Number.isInteger(value) && Number(value) >= 1;
+}
+
+function validJevSeverityFloor(value: unknown): value is number {
+  return Number.isInteger(value) && Number(value) >= 0 && Number(value) <= 3;
+}
+
+function validJevModel(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function validateJevSetting(
+  value: unknown,
+  source: string,
+  diagnostics: string[],
+): void {
+  if (value === undefined) return;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    diagnostics.push(`${source}: autoMode.jev must be an object`);
+    return;
+  }
+  const jev = value as Record<string, unknown>;
+  const knownJev: Record<string, true> = {
+    model: true,
+    onFailure: true,
+    timeoutMs: true,
+    maxQuestions: true,
+    hardDenyThreshold: true,
+    softDenyThreshold: true,
+    reviewThreshold: true,
+    allowThreshold: true,
+    authThreshold: true,
+    severityFloor: true,
+  };
+  for (const key of Object.keys(jev)) {
+    if (!knownJev[key]) {
+      diagnostics.push(`${source}: unknown autoMode.jev key ${key}`);
+    }
+  }
+  if (hasOwn(jev, "model") && !validJevModel(jev.model)) {
+    diagnostics.push(`${source}: autoMode.jev.model must be a non-empty string`);
+  }
+  if (hasOwn(jev, "onFailure") && !isJevFailurePolicy(jev.onFailure)) {
+    diagnostics.push(
+      `${source}: autoMode.jev.onFailure must be one of classifier, block`,
+    );
+  }
+  if (
+    hasOwn(jev, "timeoutMs") &&
+    (!Number.isInteger(jev.timeoutMs) ||
+      (jev.timeoutMs as number) < 1000 ||
+      (jev.timeoutMs as number) > MAX_CLASSIFIER_TIMEOUT_MS)
+  ) {
+    diagnostics.push(
+      `${source}: autoMode.jev.timeoutMs must be an integer from 1000 through ${MAX_CLASSIFIER_TIMEOUT_MS}`,
+    );
+  }
+  if (hasOwn(jev, "maxQuestions") && !validJevMaxQuestions(jev.maxQuestions)) {
+    diagnostics.push(
+      `${source}: autoMode.jev.maxQuestions must be an integer of at least 1`,
+    );
+  }
+  for (
+    const key of [
+      "hardDenyThreshold",
+      "softDenyThreshold",
+      "reviewThreshold",
+      "allowThreshold",
+      "authThreshold",
+    ] as const
+  ) {
+    if (hasOwn(jev, key) && !validJevThreshold(jev[key])) {
+      diagnostics.push(
+        `${source}: autoMode.jev.${key} must be a number from 0 through 1`,
+      );
+    }
+  }
+  if (hasOwn(jev, "severityFloor") && !validJevSeverityFloor(jev.severityFloor)) {
+    diagnostics.push(
+      `${source}: autoMode.jev.severityFloor must be an integer from 0 through 3`,
+    );
+  }
+}
+
+function mergeJev(base: JevConfig, patch: unknown): JevConfig {
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) return base;
+  const jev = patch as Partial<JevConfig>;
+  return {
+    model: validJevModel(jev.model) ? jev.model as string : base.model,
+    onFailure: isJevFailurePolicy(jev.onFailure) ? jev.onFailure : base.onFailure,
+    timeoutMs: validClassifierTimeout(jev.timeoutMs) ? jev.timeoutMs as number : base.timeoutMs,
+    maxQuestions: validJevMaxQuestions(jev.maxQuestions)
+      ? jev.maxQuestions as number
+      : base.maxQuestions,
+    hardDenyThreshold: validJevThreshold(jev.hardDenyThreshold)
+      ? jev.hardDenyThreshold as number
+      : base.hardDenyThreshold,
+    softDenyThreshold: validJevThreshold(jev.softDenyThreshold)
+      ? jev.softDenyThreshold as number
+      : base.softDenyThreshold,
+    reviewThreshold: validJevThreshold(jev.reviewThreshold)
+      ? jev.reviewThreshold as number
+      : base.reviewThreshold,
+    allowThreshold: validJevThreshold(jev.allowThreshold)
+      ? jev.allowThreshold as number
+      : base.allowThreshold,
+    authThreshold: validJevThreshold(jev.authThreshold)
+      ? jev.authThreshold as number
+      : base.authThreshold,
+    severityFloor: validJevSeverityFloor(jev.severityFloor)
+      ? jev.severityFloor as number
+      : base.severityFloor,
+  };
+}
 
 function applyAutoModeScalars(
   base: EffectiveConfig,
@@ -607,6 +756,10 @@ function applyAutoModeScalars(
     ...base,
     enabled: typeof settings.enabled === "boolean" ? settings.enabled : base.enabled,
     classifierModel: settings.classifierModel ?? base.classifierModel,
+    classifierProvider: isClassifierProvider(settings.classifierProvider)
+      ? settings.classifierProvider
+      : base.classifierProvider,
+    jev: mergeJev(base.jev, settings.jev),
     classifierReasoningLevel: isClassifierReasoningLevel(
         settings.classifierReasoningLevel,
       )
@@ -670,6 +823,8 @@ export function buildEffectiveConfigFromSources(
 ): EffectiveConfig {
   let config: EffectiveConfig = {
     enabled: true,
+    classifierProvider: DEFAULT_CLASSIFIER_PROVIDER,
+    jev: { ...DEFAULT_JEV_CONFIG },
     classifyReadOnlyTools: DEFAULT_CLASSIFY_READ_ONLY_TOOLS,
     allowInsideWorkingDirectory: DEFAULT_ALLOW_INSIDE_WORKING_DIRECTORY,
     deniedPaths: [...DEFAULT_DENIED_PATHS],

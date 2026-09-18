@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## New features
+
+- **Jev classifier backend (opt-in, OMP-only)** — Route the `tool_call` classifier through TypeSafe's Jev judgment model via `autoMode.classifierProvider` (`"pi"` default, `"auto"` / `"jev-prefilter"` / `"jev"`). Requires OMP ≥ 18.2.4 plus a TypeSafe credential (`/login typesafe` or `TYPESAFE_API_KEY`); otherwise the gate is inert and the existing classifier runs with a diagnostic. One typed question per policy rule, combined in code; review band escalates to the generative classifier in prefilter modes and blocks in `"jev"` mode. Post-gate failures follow `jev.onFailure` (`"classifier"` or `"block"`). Model pinned to `jev-1.13.0`; default thresholds are starting points, not production-tuned. The status line gains a `j:●`/`j:○` segment while a Jev provider is configured, and `/automode status` and `/automode config` report why Jev is inactive. Reduces unsafe autonomous tool use; not a sandbox or security boundary.
+
 ## [1.16.0] - 2026-09-07
 
 ## New features

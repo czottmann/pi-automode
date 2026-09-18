@@ -62,7 +62,19 @@ flowchart TD
   K5 -- yes, non-protected --> L1
   K5 -- no or protected --> L{Read-only built-in fast path?}
   L -- yes --> L1
-  L -- no --> N
+  L -- no --> N0{classifierProvider?}
+  N0 -- pi --> N[Run one-token filter]
+  N0 -- auto, jev-prefilter, jev --> NJ{Jev gate: OMP 18.2.4 + typesafe credential?}
+  NJ -- miss --> N
+  NJ -- pass --> NJ1[One judge call: state + one question per rule]
+  NJ1 -- hard/soft match --> R
+  NJ1 -- clear --> Q
+  NJ1 -- review band --> NJ2{provider?}
+  NJ2 -- auto, jev-prefilter --> P
+  NJ2 -- jev --> R
+  NJ1 -- failure --> NJ3{onFailure?}
+  NJ3 -- classifier --> N
+  NJ3 -- block --> O1
 
   N --> O{Exact safe token?}
   O -- yes --> Q[Allow tool]
@@ -235,11 +247,14 @@ Deterministic safety-control checks still resolve paths canonically before class
 
 ## What is sent to the classifier
 
-The classifier call is made by `defaultClassifyAction`.
+The classifier call is made by `defaultClassifyAction`, which reads `classifierProvider` per call. `"pi"` is today's path below. The Jev backends (`"auto"`, `"jev-prefilter"`, `"jev"`) replace the generative stages with one `TypeSafeJudge.judge()` call after the same gate:
 
-The model receives a stable system policy, a shared context message, and a final stage instruction. Both stages use the same shared prefix. Thus, supported providers can reuse it.
+1. Gate: OMP ≥ 18.2.4 exports `TypeSafeJudge`, and a `typesafe` credential resolves (`/login typesafe` or `TYPESAFE_API_KEY`). A miss is inert: the existing classifier runs and `/automode config` reports why Jev is inactive.
+2. State: `{ action, environment, project_instructions, transcript }` — the exact untruncated action, `config.environment`, loaded context (or `"(none)"`), and the classifier transcript (or `"(none)"`). Rule lists stay out; each becomes a question.
+3. Questions: one typed Noul per `hard_deny`/`soft_deny`/`allow` rule plus an explicit-authorization Noul and a severity Score question, evaluated in parallel. The request budget follows Jev's own limits, measured in approximate tokens with a 4,096-token reserve: 65,536 for state plus all questions, and 32,768 for state plus the longest question. Over budget fails via `onFailure`.
+4. Combination (in code, not the model): a hard-deny probability at/above `hardDenyThreshold` blocks; a soft-deny probability at/above `softDenyThreshold` blocks unless an allow probability at/above `allowThreshold` or explicit-auth probability at/above `authThreshold` overrides it; probabilities in the `[reviewThreshold, threshold)` band (or severity at/above `severityFloor`) mark review. An override resolves only the soft-deny rule it names, so a hard-deny rule left in the band still marks review. Review escalates in `"auto"`/`"jev-prefilter"` and blocks in `"jev"`. Escalation runs structured review directly, skipping the one-token filter, so the band reaches the stage that can resolve it; `onFailure: "classifier"` falls back to the full staged classifier instead. Post-gate failures follow `jev.onFailure` (`"classifier"` falls back, `"block"` fails closed); an aborted turn always reports `Cancelled`.
 
-To inspect each classifier request and raw response, enable `autoMode.log.classifierIo`. See [Observability logging](observability-logging.md).
+See [Configuration → Classifier provider](configuration.md#classifier-provider-jev-opt-in) for the full `autoMode.jev` reference and threshold-tuning guidance.
 
 ### System prompt
 

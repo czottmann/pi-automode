@@ -32,7 +32,9 @@ The classifier policy defines denial tiers and rule-list syntax. See [Defaults a
 
 **allow exception** (`autoMode.allow`) — A prose rule that overrides a matching [soft_deny](#classifier-policy-and-rules) rule. It cannot override [hard_deny](#classifier-policy-and-rules). It is independent of the [`permissions.allow` tier](#enforcement-flow).
 
-**`$defaults`** — A section-local marker in a rule list. It expands to the built-in entries for that list.
+**Jev** — TypeSafe's System One judgment model, an opt-in classifier backend on OMP only. It answers one typed question per policy rule with calibrated probabilities; pi-automode combines the answers in code. Requires OMP ≥ 18.2.4, a TypeSafe credential, and `classifierProvider` set to `"auto"`, `"jev-prefilter"`, or `"jev"`. See [Configuration](configuration.md#classifier-provider-jev-opt-in).
+
+**classifierProvider** — The `autoMode` field selecting the classifier backend: `"pi"` (default generative two-stage classifier), `"auto"`/`"jev-prefilter"` (Jev first, generative escalation and fallback), or `"jev"` (Jev alone; generative fallback only). Without the OMP gate the setting is inert.
 
 ## Status
 

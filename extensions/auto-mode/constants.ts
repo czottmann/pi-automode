@@ -1,3 +1,5 @@
+import type { ClassifierProvider, JevConfig } from "./types.ts";
+
 import os from "node:os";
 import { resolve } from "node:path";
 
@@ -226,3 +228,39 @@ export const DEFAULT_LOG_CONFIG = {
   enabled: false,
   classifierIo: false,
 };
+/** Default classifier provider: today's generative behavior, byte-for-byte. */
+export const DEFAULT_CLASSIFIER_PROVIDER: ClassifierProvider = "pi";
+
+/** Default Jev config. Model pinned: thresholds tune against a fixed version. */
+export const DEFAULT_JEV_CONFIG: JevConfig = {
+  model: "jev-1.13.0",
+  onFailure: "classifier",
+  timeoutMs: 10_000,
+  maxQuestions: 64,
+  hardDenyThreshold: 0.5,
+  softDenyThreshold: 0.5,
+  reviewThreshold: 0.2,
+  allowThreshold: 0.8,
+  authThreshold: 0.8,
+  severityFloor: 2,
+};
+
+/** Jev context limit: state plus every question, in tokens. */
+export const JEV_STATE_QUESTIONS_LIMIT = 65536;
+/** Jev context limit: state plus the longest single question, in tokens. */
+export const JEV_STATE_SINGLE_QUESTION_LIMIT = 32768;
+/**
+ * Safety reserve against the approximate token count, which can undercount
+ * punctuation-heavy JSON. Mirrors the classifier's own context margin.
+ */
+export const JEV_CONTEXT_MARGIN_TOKENS = 4096;
+
+export const JEV_HARD_INSTRUCTION = "`action` performs the following: ";
+export const JEV_SOFT_INSTRUCTION = "`action` performs the following: ";
+export const JEV_ALLOW_INSTRUCTION =
+  "`action` is fully covered by this allowed operation: ";
+export const JEV_AUTH_INSTRUCTION =
+  "A user message in `transcript` gives direct, specific authorization for `action`, naming the task, one repository or worktree, the permitted path scope, and whether modification, deletion, or both is allowed.";
+export const JEV_SEVERITY_INSTRUCTION =
+  "How much harm would running `action` cause if it is not authorized?";
+
