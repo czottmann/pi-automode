@@ -13,6 +13,7 @@ import {
   CLASSIFIER_SYSTEM_PROMPT,
   DEFAULT_FAST_CLASSIFIER_MAX_TOKENS,
 } from "./constants.ts";
+import { buildJevRequest, classifyWithJev, JEV_PROVIDER } from "./jev.ts";
 import { formatModelSpec, parseModelSpec } from "./model.ts";
 import { buildClassifierTranscript } from "./transcript.ts";
 import type {
@@ -757,12 +758,76 @@ export function classifierCacheSessionId(ctx: ExtensionContext): string {
   return `pi-automode-${digest}`;
 }
 
+function buildClassifierContextText(
+  ctx: ExtensionContext,
+  config: EffectiveConfig,
+  loadedContext: string,
+): string {
+  const transcript = buildClassifierTranscript(ctx, {
+    maxUserTokens: config.maxUserTranscriptTokens,
+    maxToolTokens: config.maxToolTranscriptTokens,
+  });
+  return `<loaded-project-instructions>\n${
+    loadedContext || "(none)"
+  }\n</loaded-project-instructions>\n\n<classifier-transcript>\n${
+    transcript || "(none)"
+  }\n</classifier-transcript>`;
+}
+
+async function classifyActionWithJev(
+  ctx: ExtensionContext,
+  config: EffectiveConfig,
+  action: string,
+  loadedContext: string,
+  modelId: string,
+): Promise<ClassifyResult> {
+  const reasoning: ClassifierReasoning = { mode: "server-default" };
+  const systemPrompt = buildClassifierPrompt(config);
+  const contextText = buildClassifierContextText(ctx, config, loadedContext);
+  const request = buildJevRequest(modelId, config, {
+    policy: systemPrompt,
+    context: contextText,
+    action,
+  });
+  const attempts: ClassifierIoAttempt[] = [];
+  const started = Date.now();
+  const decision = await classifyWithJev(
+    request,
+    config,
+    ctx.signal,
+    (attempt) => attempts.push(attempt),
+  );
+  return {
+    ...decision,
+    reasoning,
+    io: {
+      model: `${JEV_PROVIDER}/${modelId}`,
+      reasoning,
+      prompt: {
+        system: systemPrompt,
+        context: contextText,
+        action,
+        fastInstruction: "",
+        detailedInstruction: JSON.stringify(request.questions),
+      },
+      attempts,
+      durationMs: Date.now() - started,
+    },
+  };
+}
+
 export const defaultClassifyAction: ClassifyAction = async (
   ctx,
   config,
   action,
   loadedContext,
 ): Promise<ClassifyResult> => {
+  const jevModel = config.classifierModel
+    ? parseModelSpec(config.classifierModel)
+    : undefined;
+  if (jevModel?.provider === JEV_PROVIDER) {
+    return classifyActionWithJev(ctx, config, action, loadedContext, jevModel.id);
+  }
   const resolution = await resolveClassifier(ctx, config);
   if (!resolution.classifier || !resolution.completionPlan) {
     return {
@@ -776,15 +841,7 @@ export const defaultClassifyAction: ClassifyAction = async (
   const completionPlan = resolution.completionPlan;
 
   const systemPrompt = buildClassifierPrompt(config);
-  const transcript = buildClassifierTranscript(ctx, {
-    maxUserTokens: config.maxUserTranscriptTokens,
-    maxToolTokens: config.maxToolTranscriptTokens,
-  });
-  const contextText = `<loaded-project-instructions>\n${
-    loadedContext || "(none)"
-  }\n</loaded-project-instructions>\n\n<classifier-transcript>\n${
-    transcript || "(none)"
-  }\n</classifier-transcript>`;
+  const contextText = buildClassifierContextText(ctx, config, loadedContext);
   const contextMessage: UserMessage = {
     role: "user",
     content: [{ type: "text", text: contextText }],

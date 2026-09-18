@@ -49,6 +49,16 @@ pi -e ./extensions/auto-mode.ts
 
 `/auto-mode` is an alias.
 
+## TypeSafe Jev classifier
+
+To classify with TypeSafe's Jev model instead of an LLM, set your API key before you start Pi:
+
+```bash
+export TYPESAFE_API_KEY=your-key   # from https://console.typesafe.ai/settings/keys
+```
+
+Then run `/automode model typesafe/jev-latest`. See [Configuration](docs/configuration.md#typesafe-jev-classifier) for how Jev answers map to decisions.
+
 ## Agent diagnostics
 
 The package registers one model-callable, read-only tool:
