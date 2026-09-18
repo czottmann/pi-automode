@@ -32,6 +32,7 @@ import {
   writeGlobalClassifierModel,
 } from "./config.ts";
 import { deterministicHardDeny } from "./hard-deny.ts";
+import { jevAvailability } from "./jev.ts";
 import {
   createLogger,
   newDecisionId,
@@ -72,6 +73,7 @@ import type {
   DecisionKind,
   DenialRecord,
   EffectiveConfig,
+  JevGate,
 } from "./types.ts";
 import { safeJson, truncateMiddle } from "./utils.ts";
 
@@ -166,6 +168,8 @@ function logClassifierIo(decision: ClassifyResult, log: LogCtx): void {
     decisionId: log.decisionId,
     model: decision.io.model,
     reasoning: decision.io.reasoning,
+    ...(decision.io.provider ? { provider: decision.io.provider } : {}),
+    ...(decision.io.jev ? { jev: decision.io.jev } : {}),
     prompt: decision.io.prompt,
     attempts: decision.io.attempts,
     durationMs: decision.io.durationMs,
@@ -228,6 +232,26 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
     };
     let loadedContext = "";
     let globalConfigNoticeShown = false;
+    // Runtime-only: the Jev gate is probed per session, never persisted.
+    let jevGate: JevGate | undefined;
+
+    /**
+     * Probe the Jev gate so the status line and `/automode config` can report
+     * why Jev is or is not answering. `"pi"` is never probed.
+     */
+    async function refreshJevGate(ctx: ExtensionContext): Promise<void> {
+      const provider = effectiveConfig().classifierProvider;
+      jevGate = provider === "pi"
+        ? undefined
+        : await jevAvailability(ctx, provider);
+    }
+
+    /** Config diagnostics plus the reason Jev is inactive, when it is. */
+    function diagnosticsWithJevGate(): string[] {
+      return jevGate && !jevGate.ok
+        ? [...configDiagnostics, `autoMode.jev: ${jevGate.diagnostic}`]
+        : configDiagnostics;
+    }
 
     function effectiveConfig(): EffectiveConfig {
       return {
@@ -250,7 +274,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
     function updateUi(ctx: ExtensionContext): void {
       if (!ctx.hasUI) return;
       const cfg = effectiveConfig();
-      const text = statusLine(cfg, state);
+      const text = statusLine(cfg, state, jevGate);
       ctx.ui.setStatus(
         "pi-automode",
         cfg.enabled
@@ -306,7 +330,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
             options.logRoot,
             now(),
           ),
-          diagnostics: modelVisibleConfigDiagnostics(configDiagnostics),
+          diagnostics: modelVisibleConfigDiagnostics(diagnosticsWithJevGate()),
         };
       }
       if (action === "defaults") {
@@ -398,7 +422,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
       return undefined;
     }
 
-    pi.on("session_start", (_event, ctx) => {
+    pi.on("session_start", async (_event, ctx) => {
       loadResult = loadConfigWithDiagnostics(
         ctx.cwd,
         projectIsTrusted(ctx),
@@ -406,6 +430,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
       config = loadResult.config;
       configDiagnostics = loadResult.diagnostics;
       state = restoreState(ctx);
+      await refreshJevGate(ctx);
       if (
         ctx.hasUI &&
         globalConfig.notification &&
@@ -734,6 +759,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
         serializeClassifierAction(event.toolName, input),
         loadedContext,
       );
+      if (decision.jevGate) jevGate = decision.jevGate;
       logClassifierIo(decision, logCtx);
       if (decision.decision === "allow") {
         state.classifierAllowed += 1;
@@ -790,7 +816,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
       const remainder = rest.join(" ").trim();
 
       if (command === "status") {
-        ctx.ui.notify(statusText(effectiveConfig(), state), "info");
+        ctx.ui.notify(statusText(effectiveConfig(), state, jevGate), "info");
         return;
       }
       if (command === "on") {
@@ -814,6 +840,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
         );
         config = loadResult.config;
         configDiagnostics = loadResult.diagnostics;
+        await refreshJevGate(ctx);
         persist();
         updateUi(ctx);
         ctx.ui.notify(
@@ -866,7 +893,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
             {
               config: effectiveConfig(),
               logFile,
-              diagnostics: configDiagnostics,
+              diagnostics: diagnosticsWithJevGate(),
             },
             16000,
           ),

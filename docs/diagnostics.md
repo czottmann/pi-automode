@@ -74,7 +74,7 @@ See [Observability logging](observability-logging.md) for log configuration and 
 
 ## Diagnosis workflow
 
-Classifier rules cannot override permission or deterministic denials.
+To tell why Jev is or is not active, read the `config` view: `classifierProvider` shows the selected backend and `jev` shows its thresholds. When the OMP gate misses, `/automode config` diagnostics name the missing condition ("Jev needs Oh My Pi 18.2.4 or newer" or "run `/login typesafe` or set `TYPESAFE_API_KEY`"). The `classifier` observability entry records the acting backend in `provider` and the Jev branch in `jev` (`fallback: none | escalate | classifier | block`).
 
 1. Call `automode_inspect` with `status`, `config`, and `denials`.
 2. If observability logging is enabled, use the reported log path.

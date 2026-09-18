@@ -19,6 +19,7 @@ export * from "./auto-mode/paths.ts";
 export * from "./auto-mode/permissions.ts";
 export * from "./auto-mode/state.ts";
 export * from "./auto-mode/transcript.ts";
+export * from "./auto-mode/jev.ts";
 export * from "./auto-mode/types.ts";
 
 import { createPiAutomode } from "./auto-mode/extension.ts";

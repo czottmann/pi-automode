@@ -584,3 +584,40 @@ test("/automode config names the current log file", async () => {
 		rmSync(t.dir, { recursive: true, force: true });
 	}
 });
+
+test("tool_call logs the Jev branch without credentials", async () => {
+  const state = { action: { toolName: "bash", input: { command: "npm test" } } };
+  const questions = { hard_0: { type: "noul", instructions: "q" } };
+  const answers = { hard_0: { type: "noul", noul: 0 } };
+  const t = await setupLogTest({
+    config: baseConfig({ log: { enabled: true, classifierIo: true } }),
+    classifier: async () => ({
+      decision: "allow",
+      tier: "none",
+      reason: "Jev found no policy-relevant risk.",
+      io: {
+        model: "jev-1.13.0",
+        provider: "jev",
+        jev: { provider: "jev", model: "jev-1.13.0", state, questions, answers, fallback: "none" },
+        reasoning: { mode: "server-default" },
+        prompt: { system: "s", context: "c", action: "a", fastInstruction: "f", detailedInstruction: "d" },
+        attempts: [],
+        durationMs: 5,
+      },
+    }),
+  });
+  try {
+    await t.fake.emit("tool_call", { toolName: "bash", input: { command: "npm test" } }, t.ctx);
+    const lines = readFileSync(t.logPath, "utf8").trim().split("\n").map(JSON.parse);
+    assert.equal(lines.length, 2);
+    const classifierEntry = lines[0];
+    assert.equal(classifierEntry.type, "classifier");
+    assert.equal(classifierEntry.provider, "jev");
+    assert.deepEqual(classifierEntry.jev.state, state);
+    assert.deepEqual(classifierEntry.jev.questions, questions);
+    assert.deepEqual(classifierEntry.jev.answers, answers);
+    assert.equal(JSON.stringify(classifierEntry).includes("TYPESAFE_API_KEY"), false);
+  } finally {
+    rmSync(t.dir, { recursive: true, force: true });
+  }
+});

@@ -7,6 +7,7 @@ import type {
   UserMessage,
 } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { jevClassifyAction } from "./jev.ts";
 import {
   CLASSIFIER_DETAILED_INSTRUCTION,
   CLASSIFIER_FAST_INSTRUCTION,
@@ -757,12 +758,22 @@ export function classifierCacheSessionId(ctx: ExtensionContext): string {
   return `pi-automode-${digest}`;
 }
 
-export const defaultClassifyAction: ClassifyAction = async (
-  ctx,
-  config,
-  action,
-  loadedContext,
-): Promise<ClassifyResult> => {
+/**
+ * Which generative stages run. `"staged"` is the historical path: the
+ * one-token fast filter, then structured review only when it asks for it.
+ * `"detailed"` skips the fast filter and runs structured review directly, so
+ * a Jev review band escalates to the stage that can actually resolve it
+ * instead of re-asking a cheaper filter.
+ */
+export type PiClassifierStage = "staged" | "detailed";
+
+export async function classifyWithPiClassifier(
+  ctx: ExtensionContext,
+  config: EffectiveConfig,
+  action: string,
+  loadedContext: string,
+  stage: PiClassifierStage = "staged",
+): Promise<ClassifyResult> {
   const resolution = await resolveClassifier(ctx, config);
   if (!resolution.classifier || !resolution.completionPlan) {
     return {
@@ -824,19 +835,41 @@ export const defaultClassifyAction: ClassifyAction = async (
     };
   }
   const actionMessage = buildClassifierActionMessage(action);
-  const decision = await classifyInStages(
-    completionPlan.completeFn,
-    classifier,
-    { systemPrompt, contextMessage, actionMessage },
-    ctx.signal,
-    {
-      sessionId: classifierCacheSessionId(ctx),
-      fastClassifierMaxTokens: config.fastClassifierMaxTokens,
-      timeoutMs: config.classifierTimeoutMs,
-      reasoningLevel: completionPlan.reasoningLevel,
-      onAttempt: (attempt) => attempts.push(attempt),
-    },
-  );
+  const decision = stage === "detailed"
+    ? await classifyWithRetry(
+      completionPlan.completeFn,
+      classifier,
+      {
+        systemPrompt,
+        messages: [
+          contextMessage,
+          actionMessage,
+          stageMessage(CLASSIFIER_DETAILED_INSTRUCTION),
+        ],
+      },
+      ctx.signal,
+      {
+        stage: "detailed",
+        sessionId: classifierCacheSessionId(ctx),
+        cacheRetention: "short",
+        timeoutMs: config.classifierTimeoutMs,
+        reasoningLevel: completionPlan.reasoningLevel,
+        onAttempt: (attempt) => attempts.push(attempt),
+      },
+    )
+    : await classifyInStages(
+      completionPlan.completeFn,
+      classifier,
+      { systemPrompt, contextMessage, actionMessage },
+      ctx.signal,
+      {
+        sessionId: classifierCacheSessionId(ctx),
+        fastClassifierMaxTokens: config.fastClassifierMaxTokens,
+        timeoutMs: config.classifierTimeoutMs,
+        reasoningLevel: completionPlan.reasoningLevel,
+        onAttempt: (attempt) => attempts.push(attempt),
+      },
+    );
 
   return {
     ...decision,
@@ -849,4 +882,26 @@ export const defaultClassifyAction: ClassifyAction = async (
       durationMs: Date.now() - started,
     },
   };
+};
+
+/**
+ * Provider dispatcher, bound once at construction but reading
+ * `config.classifierProvider` per call so project-local config can select
+ * Jev without changing construction. `"pi"` is byte-identical to the
+ * previous default path.
+ */
+export const defaultClassifyAction: ClassifyAction = async (
+  ctx,
+  config,
+  action,
+  loadedContext,
+): Promise<ClassifyResult> => {
+  if (config.classifierProvider === "pi") {
+    return classifyWithPiClassifier(ctx, config, action, loadedContext);
+  }
+  return jevClassifyAction(ctx, config, action, loadedContext, {
+    fallback: (c, cfg, a, l) => classifyWithPiClassifier(c, cfg, a, l, "staged"),
+    escalate: (c, cfg, a, l) =>
+      classifyWithPiClassifier(c, cfg, a, l, "detailed"),
+  });
 };

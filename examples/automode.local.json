@@ -1,8 +1,12 @@
 {
   "autoMode": {
+    "classifierProvider": "jev-prefilter",
+    "jev": {
+      "onFailure": "classifier",
+      "timeoutMs": 10000
+    },
     "classifierReasoningLevel": "low",
     "classifierTimeoutMs": 20000,
-    "allowInsideWorkingDirectory": false,
     "deniedPaths": [
       "*.env",
       "~/.ssh/*",

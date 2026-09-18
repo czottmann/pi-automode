@@ -1,6 +1,42 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
+export type ClassifierProvider = "pi" | "auto" | "jev-prefilter" | "jev";
+
+export type JevFailurePolicy = "classifier" | "block";
+
+/** Jev (TypeSafe System One) classifier configuration. OMP-gated, opt-in. */
+export type JevConfig = {
+  model: string;
+  onFailure: JevFailurePolicy;
+  timeoutMs: number;
+  maxQuestions: number;
+  hardDenyThreshold: number;
+  softDenyThreshold: number;
+  reviewThreshold: number;
+  allowThreshold: number;
+  authThreshold: number;
+  severityFloor: number;
+};
+
+/**
+ * Runtime gate outcome for the Jev backend. A miss is inert: auto mode runs
+ * the existing classifier and reports `diagnostic` through `/automode config`
+ * and the status line.
+ */
+export type JevGate = { ok: true } | { ok: false; diagnostic: string };
+
+/** Jev-specific classifier I/O branch (state/questions/answers, no credentials). */
+export type JevClassifierIo = {
+  provider: "jev";
+  model: string;
+  state: Record<string, unknown>;
+  questions: Record<string, unknown>;
+  answers: Record<string, unknown>;
+  failureReason?: string;
+  fallback?: "classifier" | "block" | "escalate" | "none";
+};
+
 export type ClassifierReasoningLevel =
   | "low"
   | "medium"
@@ -39,6 +75,8 @@ export type LogConfig = {
 export type AutoModeSettings = {
   enabled?: boolean;
   classifierModel?: string;
+  classifierProvider?: ClassifierProvider;
+  jev?: Partial<JevConfig>;
   classifierReasoningLevel?: ClassifierReasoningLevel;
   /** When true, read-only tools (read/grep/find/ls) are classified instead of auto-allowed. */
   classifyReadOnlyTools?: boolean;
@@ -90,6 +128,8 @@ export type ToolPattern = {
 export type EffectiveConfig = {
   enabled: boolean;
   classifierModel?: string;
+  classifierProvider: ClassifierProvider;
+  jev: JevConfig;
   classifierReasoningLevel?: ClassifierReasoningLevel;
   classifyReadOnlyTools: boolean;
   fastClassifierMaxTokens: number;
@@ -167,6 +207,8 @@ export type ClassifierIoAttempt = {
 /** Full classifier I/O for an action, surfaced for optional observability logging. */
 export type ClassifierIo = {
   model: string;
+  provider?: ClassifierProvider;
+  jev?: JevClassifierIo;
   reasoning: ClassifierReasoning;
   prompt: {
     system: string;
@@ -183,6 +225,8 @@ export type ClassifierIo = {
 export type ClassifyResult = ClassificationDecision & {
   reasoning?: ClassifierReasoningLog;
   io?: ClassifierIo;
+  /** Jev gate outcome for this call. Absent when `classifierProvider` is `"pi"`. */
+  jevGate?: JevGate;
 };
 
 export type SettingsSources = {

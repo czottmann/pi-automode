@@ -28,9 +28,44 @@ To disable pi-automode for the current project, create or edit `.pi/automode.loc
 
 This file is project-local. Pi reads it only after project trust. Do not commit this file. Shared project `.pi/automode.json` cannot disable auto mode.
 
-Set a global default classifier model in `~/.pi/agent/extensions/pi-automode/config.json`. For a trusted project, override it in `.pi/automode.local.json`.
+## Classifier provider (Jev, opt-in)
 
-`classifierReasoningLevel` requests `low`, `medium`, `high`, `xhigh`, or `max` reasoning for both classifier stages. If the key is absent, pi-automode sends no reasoning preference. The server then selects the level.
+`classifierProvider` selects the classifier backend. The default `"pi"` keeps today's generative two-stage classifier byte-for-byte. Three opt-in values route through TypeSafe's Jev model on Oh My Pi only:
+
+- `"auto"` — generative classifier stays, but Jev answers first when its gate passes and the generative classifier handles escalation and fallback.
+- `"jev-prefilter"` — same routing as `"auto"`; the name states the intent.
+- `"jev"` — Jev decides alone; the generative classifier only handles `onFailure: "classifier"` fallback, never escalation.
+
+Jev is inert unless all three hold: OMP ≥ 18.2.4 (the `TypeSafeJudge` export exists), a TypeSafe credential (`/login typesafe` or `TYPESAFE_API_KEY`), and an explicit opt-in above. Otherwise auto mode runs the existing classifier and `/automode config` reports a diagnostic such as "Jev needs Oh My Pi 18.2.4 or newer" or "run `/login typesafe` or set `TYPESAFE_API_KEY`". Configuring Jev on stock Pi never blocks an action by itself.
+
+For `"auto"` and `"jev-prefilter"`, the generative classifier must still be resolvable (`autoMode.classifierModel` or the session model), because it is the escalation and fallback target.
+
+`autoMode.jev` tunes the Jev backend and merges key-by-key across global, project-local, and `PI_AUTOMODE_SETTINGS_JSON` (shared `.pi/automode.json` cannot set it):
+
+```json
+{
+  "autoMode": {
+    "classifierProvider": "jev-prefilter",
+    "jev": {
+      "onFailure": "classifier",
+      "timeoutMs": 10000,
+      "maxQuestions": 64,
+      "hardDenyThreshold": 0.5,
+      "softDenyThreshold": 0.5,
+      "reviewThreshold": 0.2,
+      "allowThreshold": 0.8,
+      "authThreshold": 0.8,
+      "severityFloor": 2
+    }
+  }
+}
+```
+
+`model` is pinned to `jev-1.13.0` and intentionally not configurable: thresholds tune against a fixed version, and tuning against a moving model would make the measurements meaningless. `onFailure` is `"classifier"` (fall back to the user's own generative classifier) or `"block"` (fail closed). Every threshold is a probability in `[0,1]` except `severityFloor` (integer harm score). An unresolved review band escalates to the detailed stage in `"auto"`/`"jev-prefilter"` but always blocks in `"jev"` mode regardless of `onFailure`.
+
+The defaults are starting points validated against a small sample, not tuned against production traffic. Read `log.classifierIo` output to tune them (the `jev` branch records state, questions, answers, and the fallback path). Changing a default threshold is a minor-version change since it changes allow/block outcomes. OMP owns the transport knobs (`TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL`, `TYPESAFE_DEFAULT_MODEL`); pi-automode does not read OMP's `providers.judgmentProvider`.
+
+Set a global default classifier model in `~/.pi/agent/extensions/pi-automode/config.json`. For a trusted project, override it in `.pi/automode.local.json`.
 
 Pi AI clamps an unsupported value to the nearest level that the selected model supports. A model without reasoning support resolves to `off`. `low` matches the reasoning effort of Codex Auto Review.
 

@@ -1,6 +1,11 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { DENIAL_HISTORY_LIMIT } from "./constants.ts";
-import type { AutoModeState, DenialRecord, EffectiveConfig } from "./types.ts";
+import type {
+  AutoModeState,
+  DenialRecord,
+  EffectiveConfig,
+  JevGate,
+} from "./types.ts";
 import { safeJson, truncateMiddle } from "./utils.ts";
 
 export function pushDenial(state: AutoModeState, denial: DenialRecord): void {
@@ -10,9 +15,23 @@ export function pushDenial(state: AutoModeState, denial: DenialRecord): void {
   ];
 }
 
+/**
+ * `j:` appears only when a Jev provider is configured, so the default `"pi"`
+ * status line is unchanged. A filled circle means the gate passed and Jev is
+ * answering; an empty one means auto mode is running the existing classifier.
+ */
+function jevSegment(
+  config: EffectiveConfig,
+  jevGate: JevGate | undefined,
+): string {
+  if (config.classifierProvider === "pi") return "";
+  return ` j:${jevGate?.ok ? "●" : "○"}`;
+}
+
 export function statusLine(
   config: EffectiveConfig,
   state: AutoModeState,
+  jevGate?: JevGate,
 ): string {
   const enabled = state.enabledOverride ?? config.enabled;
   const circle = enabled ? "●" : "○";
@@ -20,16 +39,26 @@ export function statusLine(
   const classifier = state.classifierAllowed > 0 || state.classifierDenied > 0
     ? ` ca:${state.classifierAllowed} cd:${state.classifierDenied}`
     : "";
-  return `AM${circle} a:${allowed} d:${state.blockedActions}${classifier}`;
+  return `AM${circle} a:${allowed} d:${state.blockedActions}${classifier}${
+    jevSegment(config, jevGate)
+  }`;
 }
 
 export function statusText(
   config: EffectiveConfig,
   state: AutoModeState,
+  jevGate?: JevGate,
 ): string {
   return [
     `enabled: ${(state.enabledOverride ?? config.enabled) ? "yes" : "no"}`,
     `classifier: ${config.classifierModel ?? "current session model"}`,
+    ...(config.classifierProvider === "pi" ? [] : [
+      `jev: ${
+        jevGate?.ok
+          ? `active (${config.jev.model})`
+          : `inactive (${jevGate?.diagnostic ?? "not probed yet"})`
+      }`,
+    ]),
     `classifier reasoning: ${config.classifierReasoningLevel ?? "server default"}`,
     `checked actions: ${state.checkedActions}`,
     `blocked actions: ${state.blockedActions}`,
