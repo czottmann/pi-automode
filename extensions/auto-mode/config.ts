@@ -321,7 +321,7 @@ export function validateSettingsFile(
         !isClassifierReasoningLevel(autoMode.classifierReasoningLevel)
       ) {
         diagnostics.push(
-          `${source}: autoMode.classifierReasoningLevel must be one of low, medium, high, xhigh, max`,
+          `${source}: autoMode.classifierReasoningLevel must be one of off, low, medium, high, xhigh, max`,
         );
       }
       if (
@@ -577,6 +577,7 @@ const DENIED_PATH_PATTERN_PREFIX =
   /^(?:\/|~(?:\/|$)|\$HOME(?:\/|$)|\$\{HOME\}(?:\/|$)|\*)/;
 
 const CLASSIFIER_REASONING_LEVELS = new Set<ClassifierReasoningLevel>([
+  "off",
   "low",
   "medium",
   "high",
