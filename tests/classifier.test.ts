@@ -9,7 +9,10 @@ import {
 	buildClassifierActionMessage,
 	buildClassifierTranscript,
 	classifierCacheSessionId,
+	classifierEscalatedMaxTokens,
+	classifierReasoningBudget,
 	classifierRequestLimitReason,
+	classifierRequestMaxTokens,
 	classifyInStages,
 	classifyWithRetry,
 	createClassifierCompletionPlan,
@@ -225,6 +228,34 @@ function fakeComplete(responses: AssistantMessage[]) {
 		const res = responses[i];
 		i += 1;
 		return res;
+	};
+	return { fn: fn as never, calls };
+}
+
+/**
+ * Emulates a provider whose hidden reasoning shares the output ceiling: the
+ * response only completes once maxTokens covers completeAtTokens.
+ */
+function truncatingComplete(
+	completeAtTokens: number,
+	decision: AssistantMessage,
+	fastText = "1",
+) {
+	const calls: Array<{ maxTokens: number; tools?: unknown }> = [];
+	let fastDone = false;
+	const fn = async (
+		_model: unknown,
+		options: { tools?: unknown },
+		callOptions: { maxTokens: number },
+	): Promise<AssistantMessage> => {
+		calls.push({ maxTokens: callOptions.maxTokens, tools: options.tools });
+		if (!fastDone) {
+			fastDone = true;
+			return assistantWith(fastText);
+		}
+		return callOptions.maxTokens >= completeAtTokens
+			? decision
+			: assistantWith(GARBAGE, "length");
 	};
 	return { fn: fn as never, calls };
 }
@@ -703,6 +734,62 @@ test("classifier request size checks reserve explicit reasoning budgets", () => 
 	}
 });
 
+test("classifier reasoning budgets match the reserve table", () => {
+	assert.equal(classifierReasoningBudget(undefined), 0);
+	assert.equal(classifierReasoningBudget("minimal"), 1024);
+	assert.equal(classifierReasoningBudget("low"), 4096);
+	assert.equal(classifierReasoningBudget("medium"), 8192);
+	assert.equal(classifierReasoningBudget("high"), 16384);
+	assert.equal(classifierReasoningBudget("xhigh"), 32768);
+	assert.equal(classifierReasoningBudget("max"), 32768);
+});
+
+test("classifier request ceilings compose the answer allowance and reasoning budget", () => {
+	assert.equal(classifierRequestMaxTokens(1200, undefined, 32_000), 1200);
+	assert.equal(classifierRequestMaxTokens(1200, "low", 32_000), 5296);
+	assert.equal(classifierRequestMaxTokens(512, "low", 32_000), 4608);
+	assert.equal(classifierRequestMaxTokens(1200, "max", 32_000), 32_000);
+	assert.equal(classifierRequestMaxTokens(1200, "low", 3000), 3000);
+});
+
+test("classifier escalated ceilings use context room unless the base is already larger", () => {
+	const context = { systemPrompt: "s", messages: [] };
+	assert.equal(
+		classifierEscalatedMaxTokens(200_000, 32_000, context, 1200),
+		32_000,
+	);
+	assert.equal(
+		classifierEscalatedMaxTokens(10_000, 32_000, context, 5296),
+		10_000 - 1 - 4096,
+	);
+	assert.equal(
+		classifierEscalatedMaxTokens(10_000, 32_000, context, 32_000),
+		32_000,
+	);
+	assert.equal(
+		classifierEscalatedMaxTokens(Number.NaN, 32_000, context, 1200),
+		1200,
+	);
+	assert.equal(
+		classifierEscalatedMaxTokens(200_000, Number.NaN, context, 1200),
+		1200,
+	);
+});
+
+test("detailed request size checks reserve the composed ceiling at explicit levels", () => {
+	assert.match(
+		classifierRequestLimitReason(
+			4096 + 5296 - 1,
+			100_000,
+			"low",
+			1200,
+			"detailed",
+			{ systemPrompt: "", messages: [] },
+		) ?? "",
+		/5296 output tokens reserved/,
+	);
+});
+
 test("default classifier blocks oversized exact actions before a model call", async () => {
 	const action = serializeClassifierAction("write", {
 		path: "/tmp/project/output.txt",
@@ -844,6 +931,64 @@ test("classifyInStages blocks before detailed review when only the fast request 
 	assert.match(decision.reason, /detailed classifier context.*fails closed/i);
 	assert.equal(calls.length, 1);
 	assert.deepEqual(attempts.map((attempt) => attempt.stage), ["fast"]);
+});
+
+test("classifyInStages grants the reserved reasoning room at explicit levels", async () => {
+	const { fn, calls } = truncatingComplete(5000, assistantWithDecision());
+	const decision = await classifyInStages(
+		fn,
+		classifierWithContext(200_000, 32_000),
+		stagedPrompt(),
+		undefined,
+		{ sessionId: "pi-automode:test-session", reasoningLevel: "low" },
+	);
+
+	assert.equal(decision.decision, "allow");
+	assert.equal(calls.length, 2);
+	assert.equal(calls[0]?.maxTokens, 4608);
+	assert.equal(calls[1]?.maxTokens, 5296);
+});
+
+test("classifyInStages escalates the detailed retry ceiling after a length stop", async () => {
+	const { fn, calls } = truncatingComplete(5000, assistantWithDecision());
+	const attempts: ClassifierIoAttempt[] = [];
+	const decision = await classifyInStages(
+		fn,
+		classifierWithContext(200_000, 32_000),
+		stagedPrompt(),
+		undefined,
+		{ sessionId: "pi-automode:test-session", onAttempt: (attempt) => attempts.push(attempt) },
+	);
+
+	assert.equal(decision.decision, "allow");
+	assert.equal(calls.length, 3);
+	assert.equal(calls[0]?.maxTokens, 512);
+	assert.equal(calls[1]?.maxTokens, 1200);
+	assert.equal(calls[2]?.maxTokens, 32_000);
+	assert.equal(attempts[0]?.requestMaxTokens, 512);
+	assert.equal(attempts[1]?.requestMaxTokens, 1200);
+	assert.equal(attempts[2]?.requestMaxTokens, 32_000);
+});
+
+test("classifyInStages skips the detailed retry when the model limit bounds the ceiling", async () => {
+	const { fn, calls } = fakeComplete([
+		assistantWith("1"),
+		assistantWith(GARBAGE, "length"),
+		assistantWithDecision(),
+	]);
+	const decision = await classifyInStages(
+		fn,
+		classifierWithContext(200_000, 16_384),
+		stagedPrompt(),
+		undefined,
+		{ sessionId: "pi-automode:test-session", reasoningLevel: "xhigh" },
+	);
+
+	assert.equal(decision.decision, "block");
+	assert.match(decision.reason, /truncated/);
+	assert.equal(calls.length, 2);
+	assert.equal(calls[0]?.maxTokens, 16_384);
+	assert.equal(calls[1]?.maxTokens, 16_384);
 });
 
 test("classifyInStages runs detailed tool review and retries with the same cached prefix", async () => {
@@ -1213,6 +1358,130 @@ test("classifyWithRetry retries a valid decision tool call truncated by the prov
 
 	assert.equal(decision.decision, "allow");
 	assert.equal(calls.length, 2);
+});
+
+test("classifyWithRetry escalates the retry ceiling after a length stop", async () => {
+	const { fn, calls } = fakeComplete([
+		assistantWith(GARBAGE, "length"),
+		assistantWithDecision(),
+	]);
+	const decision = await classifyWithRetry(
+		fn,
+		classifierWithContext(),
+		{ systemPrompt: "s", messages: [] },
+		undefined,
+	);
+
+	assert.equal(decision.decision, "allow");
+	assert.equal(calls.length, 2);
+	assert.equal(calls[0]?.maxTokens, 1200);
+	assert.equal(calls[1]?.maxTokens, 32_000);
+});
+
+test("classifyWithRetry caps the escalated ceiling to the model output limit", async () => {
+	const { fn, calls } = fakeComplete([
+		assistantWith(GARBAGE, "length"),
+		assistantWithDecision(),
+	]);
+	const decision = await classifyWithRetry(
+		fn,
+		classifierWithContext(200_000, 2000),
+		{ systemPrompt: "s", messages: [] },
+		undefined,
+	);
+
+	assert.equal(decision.decision, "allow");
+	assert.equal(calls[1]?.maxTokens, 2000);
+});
+
+test("classifyWithRetry caps the escalated ceiling to context room", async () => {
+	const { fn, calls } = fakeComplete([
+		assistantWith(GARBAGE, "length"),
+		assistantWithDecision(),
+	]);
+	const decision = await classifyWithRetry(
+		fn,
+		classifierWithContext(10_000, 32_000),
+		{ systemPrompt: "s", messages: [] },
+		undefined,
+	);
+
+	assert.equal(decision.decision, "allow");
+	assert.equal(calls[1]?.maxTokens, 10_000 - 1 - 4096);
+});
+
+test("classifyWithRetry fails closed when the escalated retry also truncates", async () => {
+	const { fn, calls } = fakeComplete([
+		assistantWith(GARBAGE, "length"),
+		assistantWith(GARBAGE, "length"),
+	]);
+	const decision = await classifyWithRetry(
+		fn,
+		classifierWithContext(),
+		{ systemPrompt: "s", messages: [] },
+		undefined,
+	);
+
+	assert.equal(decision.decision, "block");
+	assert.match(decision.reason, /truncated/);
+	assert.equal(calls.length, 2);
+	assert.equal(calls[0]?.maxTokens, 1200);
+	assert.equal(calls[1]?.maxTokens, 32_000);
+});
+
+test("classifyWithRetry skips the retry when the model limit bounds the ceiling", async () => {
+	const { fn, calls } = fakeComplete([
+		assistantWith(GARBAGE, "length"),
+		assistantWithDecision(),
+	]);
+	const decision = await classifyWithRetry(
+		fn,
+		classifierWithContext(200_000, 1200),
+		{ systemPrompt: "s", messages: [] },
+		undefined,
+	);
+
+	assert.equal(decision.decision, "block");
+	assert.match(decision.reason, /truncated/);
+	assert.equal(calls.length, 1);
+	assert.equal(calls[0]?.maxTokens, 1200);
+});
+
+test("classifyWithRetry skips the retry when the ceiling cannot rise above context room", async () => {
+	const { fn, calls } = fakeComplete([
+		assistantWith(GARBAGE, "length"),
+		assistantWithDecision(),
+	]);
+	const decision = await classifyWithRetry(
+		fn,
+		classifierWithContext(10_000, 32_000),
+		{ systemPrompt: "s", messages: [] },
+		undefined,
+		{ maxTokens: 32_000 },
+	);
+
+	assert.equal(decision.decision, "block");
+	assert.match(decision.reason, /truncated/);
+	assert.equal(calls.length, 1);
+	assert.equal(calls[0]?.maxTokens, 32_000);
+});
+
+test("classifyWithRetry retries malformed decisions without changing the ceiling", async () => {
+	const { fn, calls } = fakeComplete([
+		assistantWithDecision({ ...VALID_ALLOW, unexpected: true }),
+		assistantWithDecision(),
+	]);
+	const decision = await classifyWithRetry(
+		fn,
+		classifierWithContext(),
+		{ systemPrompt: "s", messages: [] },
+		undefined,
+	);
+
+	assert.equal(decision.decision, "allow");
+	assert.equal(calls.length, 2);
+	assert.equal(calls[0]?.maxTokens, 1200);
+	assert.equal(calls[1]?.maxTokens, 1200);
 });
 
 test("classifyWithRetry does not authorize a valid tool call with stopReason stop", async () => {

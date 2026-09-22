@@ -340,7 +340,8 @@ async function completeSimpleWithProvider(
   return provider.streamSimple(model, context, options).result();
 }
 
-const DETAILED_CLASSIFIER_MAX_TOKENS = 1200;
+/** Answer tokens reserved for the detailed decision tool call, excluding hidden reasoning. */
+const DETAILED_ANSWER_ALLOWANCE_TOKENS = 1200;
 // Match Pi AI's context clamp safety reserve and input estimate.
 const CLASSIFIER_CONTEXT_MARGIN_TOKENS = 4096;
 const CLASSIFIER_CHARS_PER_TOKEN = 4;
@@ -422,6 +423,78 @@ export function estimateClassifierContextTokens(
   return systemTokens + messageTokens + toolTokens;
 }
 
+/**
+ * Output reserve from the #51 context check (OMP 18 values).
+ * Not pi-ai 0.86.0's thinking-pad table: that table uses 2048 at `low`
+ * and clamps `xhigh` and `max` to `high` (16384).
+ */
+const CLASSIFIER_REASONING_BUDGETS: Record<
+  Exclude<EffectiveClassifierReasoningLevel, "off">,
+  number
+> = {
+  minimal: 1024,
+  low: 4096,
+  medium: 8192,
+  high: 16384,
+  xhigh: 32768,
+  max: 32768,
+};
+
+/** Reasoning tokens reserved for a level; 0 when the server default governs reasoning. */
+export function classifierReasoningBudget(
+  reasoningLevel: Exclude<EffectiveClassifierReasoningLevel, "off"> | undefined,
+): number {
+  return reasoningLevel === undefined
+    ? 0
+    : CLASSIFIER_REASONING_BUDGETS[reasoningLevel];
+}
+
+/**
+ * Ceiling passed to the completion function: allowance plus the #51 reserve,
+ * clamped to the model output limit. This matches the context-fit reserve.
+ * It does not split answer tokens from hidden reasoning. Shared-ceiling
+ * adapters treat the whole value as one cap. Budget-thinking adapters may
+ * add their own thinking budget on top, then clamp to the context window.
+ */
+export function classifierRequestMaxTokens(
+  stageMaxTokens: number,
+  reasoningLevel: Exclude<EffectiveClassifierReasoningLevel, "off"> | undefined,
+  modelMaxTokens: number,
+): number {
+  return Math.min(
+    stageMaxTokens + classifierReasoningBudget(reasoningLevel),
+    modelMaxTokens,
+  );
+}
+
+/**
+ * Retry ceiling after a length stop: the smaller of the model output limit
+ * and the estimated context room, but never below the base ceiling. If the
+ * base already exceeds that room, the result does too. `classifyInStages`
+ * rejects an unfit base before the first call, so the staged path does not
+ * hit that branch. Raw completions do not clamp `maxTokens`; this function
+ * is a context guard only when it is not raised back to an oversized base.
+ * A result equal to the base ceiling means no escalation is possible;
+ * `classifyWithRetry` skips the retry in that case.
+ */
+export function classifierEscalatedMaxTokens(
+  contextWindow: number,
+  modelMaxTokens: number,
+  context: ClassifierCompletionContext,
+  baseMaxTokens: number,
+): number {
+  if (!Number.isFinite(modelMaxTokens) || modelMaxTokens <= 0) {
+    return baseMaxTokens;
+  }
+  if (!Number.isFinite(contextWindow) || contextWindow <= 0) {
+    return baseMaxTokens;
+  }
+  const contextRoom = contextWindow -
+    estimateClassifierContextTokens(context) -
+    CLASSIFIER_CONTEXT_MARGIN_TOKENS;
+  return Math.max(baseMaxTokens, Math.min(modelMaxTokens, contextRoom));
+}
+
 /** Return a fail-closed reason when one exact classifier request cannot fit. */
 export function classifierRequestLimitReason(
   contextWindow: number,
@@ -437,18 +510,9 @@ export function classifierRequestLimitReason(
   if (!Number.isFinite(modelMaxTokens) || modelMaxTokens <= 0) {
     return "Classifier model has no valid output-token limit; auto mode fails closed.";
   }
-  const reasoningBudget = reasoningLevel === undefined
-    ? 0
-    : {
-      minimal: 1024,
-      low: 4096,
-      medium: 8192,
-      high: 16384,
-      xhigh: 32768,
-      max: 32768,
-    }[reasoningLevel];
-  const outputReserve = Math.min(
-    stageMaxTokens + reasoningBudget,
+  const outputReserve = classifierRequestMaxTokens(
+    stageMaxTokens,
+    reasoningLevel,
     modelMaxTokens,
   );
   const inputTokens = estimateClassifierContextTokens(context);
@@ -561,6 +625,7 @@ function responseAttempt(
   durationMs: number,
   parsed?: ClassificationDecision,
   trimText = true,
+  requestMaxTokens?: number,
 ): ClassifierIoAttempt {
   const toolCalls = response.content
     .filter((block) => block.type === "toolCall")
@@ -568,6 +633,7 @@ function responseAttempt(
   return {
     stage,
     attempt,
+    ...(requestMaxTokens === undefined ? {} : { requestMaxTokens }),
     response: {
       stopReason: response.stopReason,
       text: extractAssistantText(response, trimText),
@@ -628,14 +694,16 @@ export async function classifyWithRetry(
   options: RetryOptions = {},
 ): Promise<ClassificationDecision> {
   const maxAttempts = options.maxAttempts ?? 2;
-  const maxTokens = options.maxTokens ?? DETAILED_CLASSIFIER_MAX_TOKENS;
+  const maxTokens = options.maxTokens ?? DETAILED_ANSWER_ALLOWANCE_TOKENS;
   const temperature = options.temperature;
   const stage = options.stage ?? "detailed";
   const onAttempt = options.onAttempt;
   let lastReason =
     "Classifier response did not contain a valid classifier decision tool call; auto mode fails closed.";
+  let retryMaxTokens: number | undefined;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const started = Date.now();
+    const attemptMaxTokens = retryMaxTokens ?? maxTokens;
     let response: AssistantMessage;
     try {
       response = await completeClassifierAttempt(
@@ -647,7 +715,7 @@ export async function classifyWithRetry(
           apiKey: classifier.apiKey,
           headers: classifier.headers,
           env: classifier.env,
-          maxTokens,
+          maxTokens: attemptMaxTokens,
           ...(temperature === undefined ? {} : { temperature }),
           ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
           ...(options.reasoningLevel === undefined
@@ -664,6 +732,7 @@ export async function classifyWithRetry(
         attempt: attempt + 1,
         error: message,
         durationMs: Date.now() - started,
+        requestMaxTokens: attemptMaxTokens,
       });
       return {
         decision: "block",
@@ -677,7 +746,15 @@ export async function classifyWithRetry(
       ? parseClassifierDecision(response)
       : undefined;
     onAttempt?.(
-      responseAttempt(stage, attempt + 1, response, durationMs, decision, false),
+      responseAttempt(
+        stage,
+        attempt + 1,
+        response,
+        durationMs,
+        decision,
+        false,
+        attemptMaxTokens,
+      ),
     );
     if (failure) return failure;
     if (decision) return decision;
@@ -685,6 +762,25 @@ export async function classifyWithRetry(
       response.stopReason === "length"
         ? "Classifier response was truncated before producing a valid classifier decision tool call; auto mode fails closed."
         : "Classifier response did not contain a valid classifier decision tool call; auto mode fails closed.";
+    if (response.stopReason === "length" && retryMaxTokens === undefined) {
+      // The same ceiling would truncate again. Retry once at the smaller of
+      // the model output limit and the estimated context room, floored at
+      // the base ceiling. This does not prove the model will leave answer room.
+      const escalatedMaxTokens = classifierEscalatedMaxTokens(
+        classifier.model.contextWindow,
+        classifier.model.maxTokens,
+        prompt,
+        maxTokens,
+      );
+      if (escalatedMaxTokens <= maxTokens) {
+        // The ceiling cannot rise: the model output limit or the estimated
+        // context room already bounds the request, so the retry would repeat
+        // it identically. Fail closed now instead of spending a second
+        // attempt.
+        return { decision: "block", tier: "none", reason: lastReason };
+      }
+      retryMaxTokens = escalatedMaxTokens;
+    }
   }
   return { decision: "block", tier: "none", reason: lastReason };
 }
@@ -708,6 +804,11 @@ export async function classifyInStages(
 ): Promise<ClassificationDecision> {
   const fastMaxTokens = options.fastClassifierMaxTokens ??
     DEFAULT_FAST_CLASSIFIER_MAX_TOKENS;
+  const fastRequestMaxTokens = classifierRequestMaxTokens(
+    fastMaxTokens,
+    options.reasoningLevel,
+    classifier.model.maxTokens,
+  );
   const fastPrompt: ClassifierCompletionContext = {
     systemPrompt: prompt.systemPrompt,
     messages: [
@@ -740,9 +841,10 @@ export async function classifyInStages(
         apiKey: classifier.apiKey,
         headers: classifier.headers,
         env: classifier.env,
-        // Reasoning and OpenAI-compatible models may consume hidden reasoning,
-        // control, and EOS tokens before emitting the required visible digit.
-        maxTokens: fastMaxTokens,
+        // Send the reserve the context-fit check already uses. At an
+        // explicit level this raises the shared ceiling. It does not keep
+        // hidden reasoning off the digit.
+        maxTokens: fastRequestMaxTokens,
         ...(options.reasoningLevel === undefined
           ? {}
           : { reasoning: options.reasoningLevel }),
@@ -760,6 +862,7 @@ export async function classifyInStages(
       attempt: 1,
       error: message,
       durationMs: Date.now() - fastStarted,
+      requestMaxTokens: fastRequestMaxTokens,
     });
     return {
       decision: "block",
@@ -778,6 +881,7 @@ export async function classifyInStages(
       Date.now() - fastStarted,
       undefined,
       false,
+      fastRequestMaxTokens,
     ),
   );
   if (failure) return failure;
@@ -810,7 +914,7 @@ export async function classifyInStages(
     classifier.model.contextWindow,
     classifier.model.maxTokens,
     options.reasoningLevel,
-    DETAILED_CLASSIFIER_MAX_TOKENS,
+    DETAILED_ANSWER_ALLOWANCE_TOKENS,
     "detailed",
     detailedPrompt,
   );
@@ -825,6 +929,11 @@ export async function classifyInStages(
     signal,
     {
       stage: "detailed",
+      maxTokens: classifierRequestMaxTokens(
+        DETAILED_ANSWER_ALLOWANCE_TOKENS,
+        options.reasoningLevel,
+        classifier.model.maxTokens,
+      ),
       sessionId: options.sessionId,
       cacheRetention: "short",
       timeoutMs: options.timeoutMs,

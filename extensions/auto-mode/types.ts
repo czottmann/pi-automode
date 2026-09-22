@@ -151,6 +151,8 @@ export type ClassificationDecision = {
 export type ClassifierIoAttempt = {
   stage: "fast" | "detailed";
   attempt: number;
+  /** Output-token ceiling sent with this attempt's request. */
+  requestMaxTokens?: number;
   response?: {
     stopReason?: string;
     text: string;
