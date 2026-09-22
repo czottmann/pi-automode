@@ -30,7 +30,7 @@ This file is project-local. Pi reads it only after project trust. Do not commit 
 
 Set a global default classifier model in `~/.pi/agent/extensions/pi-automode/config.json`. For a trusted project, override it in `.pi/automode.local.json`.
 
-`classifierReasoningLevel` requests `low`, `medium`, `high`, `xhigh`, or `max` reasoning for both classifier stages. If the key is absent, pi-automode sends no reasoning preference. The server then selects the level.
+`classifierReasoningLevel` requests `off`, `low`, `medium`, `high`, `xhigh`, or `max` reasoning for both classifier stages. If the key is absent, pi-automode sends no reasoning preference. The server then selects the level. `off` disables thinking only for models whose provider registry maps `off` (for example GLM-5.2 or DeepSeek V4.1 Flash); on models that cannot disable thinking, the request is clamped up to the nearest supported level.
 
 Pi AI clamps an unsupported value to the nearest level that the selected model supports. A model without reasoning support resolves to `off`. `low` matches the reasoning effort of Codex Auto Review.
 
