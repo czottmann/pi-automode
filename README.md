@@ -79,13 +79,14 @@ The bundled `automode-diagnostics` skill uses this tool to diagnose unexpected d
 When the Pi TUI is available, the extension renders a persistent status line:
 
 ```text
-AM ● a:12 d:2 ca:5 cd:1
+AM ● a:12 d:2 ca:5 cd:1 c:$0.0012
 ```
 
 - `AM` — auto-mode prefix. `●` means enabled. `○` means disabled through configuration or `/automode off`.
 - `a:` — actions allowed so far (checked minus denied).
 - `d:` — actions denied so far, for any reason (permission rule, deterministic hard-deny, or classifier).
 - `ca:` / `cd:` — classifier decisions split into allowed and denied. These segments appear after the first classifier call. `d:` counts all denials, so `d:` is always `>= cd:`.
+- `c:` — after the first classifier call, cumulative classifier usage cost for this session in USD, including fast, detailed, and retry calls. It uses the cost in Pi's response usage metadata; unpriced models/providers may report zero.
 
 ## Docs
 

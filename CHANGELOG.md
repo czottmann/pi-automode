@@ -8,6 +8,7 @@ All notable changes to this project are documented in this file.
 
 ## New features
 
+- **Classifier cost in the status line** — Accumulate Pi's classifier usage cost across fast, detailed, and retry attempts, and show the current session total alongside classifier decision counts.
 - **Schema-constrained classifier decisions** — Return detailed-stage decisions through an internal `classifier_decision` tool call. Supported providers enforce the schema during generation, and pi-automode validates every returned call locally. When strict tool sampling is available, this reduces fail-closed blocks caused by malformed or contract-invalid decision JSON. (#50)
 - **[Permission recipes](docs/permission-recipes.md)** — Add safe, composable examples for Bash permissions, working-directory changes, command chains, redirects, and classifier guidance. Thanks to @georgesleen for the impulse! (#46)
 
