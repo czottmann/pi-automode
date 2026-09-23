@@ -9,12 +9,39 @@ import {
 	analyzeBash,
 	matchesToolPattern,
 	parseToolPattern,
+	type ClassifierIoAttempt,
 } from "../extensions/auto-mode.ts";
 import {
 	baseConfig,
 	createFakeCtx,
 	setupHookTest,
 } from "./test-helpers.ts";
+
+function classifierAttempt(
+	stage: "fast" | "detailed",
+	attempt: number,
+	cost: number,
+): ClassifierIoAttempt {
+	return {
+		stage,
+		attempt,
+		durationMs: 1,
+		response: {
+			stopReason: "stop",
+			text: "0",
+			model: "test-model",
+			timestamp: 0,
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: cost },
+			},
+		},
+	};
+}
 
 test("tool_call hook blocks permissions.deny before deterministic checks and classifier", async () => {
 	const pattern = parseToolPattern("bash(git push --force*)");
@@ -150,6 +177,73 @@ test("tool_call routes read-only tools through classifier when classifyReadOnlyT
 
 	assert.equal(result, undefined);
 	assert.equal(harness.classifierCalls, 1);
+});
+
+test("tool_call accumulates classifier usage cost across calls and all attempts", async () => {
+	const harness = await setupHookTest({
+		config: baseConfig({ classifyReadOnlyTools: true }),
+		classifier: async () => ({
+			decision: "allow",
+			tier: "allow",
+			reason: "mock allow",
+			io: {
+				model: "test/test-model",
+				reasoning: { mode: "server-default" },
+				prompt: {
+					system: "",
+					context: "",
+					action: "",
+					fastInstruction: "",
+					detailedInstruction: "",
+				},
+				attempts: [
+					classifierAttempt("fast", 1, 0.0004),
+					classifierAttempt("detailed", 1, 0.0006),
+					classifierAttempt("detailed", 2, 0.0005),
+					{ stage: "detailed", attempt: 3, durationMs: 1, error: "network error" },
+				],
+				durationMs: 4,
+			},
+		}),
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "read",
+		input: { path: "README.md" },
+	}, harness.ctx);
+
+	assert.equal(result, undefined);
+	await harness.emit("tool_call", {
+		toolName: "read",
+		input: { path: "README.md" },
+	}, harness.ctx);
+
+	assert.equal(harness.classifierCalls, 2);
+	assert.equal(harness.entries.at(-1)?.data.classifierCost, 0.003);
+	assert.match(harness.ctx.statuses.at(-1)?.text ?? "", /c:\$0\.0030/);
+});
+
+test("/automode reset clears accumulated classifier cost", async () => {
+	const ctx = createFakeCtx([{
+		type: "custom",
+		customType: "pi-automode-state",
+		data: {
+			checkedActions: 1,
+			blockedActions: 0,
+			classifierAllowed: 1,
+			classifierDenied: 0,
+			classifierCost: 0.25,
+			recentDenials: [],
+		},
+	}]);
+	const harness = await setupHookTest({ ctx });
+	const command = harness.commands.get("automode");
+	assert.ok(command);
+
+	await command.handler("reset", harness.ctx);
+
+	assert.equal(harness.entries.at(-1)?.data.classifierCost, 0);
+	assert.equal(harness.ctx.statuses.at(-1)?.text, "AM ● a:0 d:0");
 });
 
 test("tool_call makes blocked actions operationally explicit", async () => {

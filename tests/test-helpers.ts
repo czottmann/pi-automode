@@ -7,7 +7,7 @@ import {
 	analyzeBash,
 	createPiAutomode,
 	type AutoModeState,
-	type ClassificationDecision,
+	type ClassifyResult,
 	type EffectiveConfig,
 } from "../extensions/auto-mode.ts";
 
@@ -170,6 +170,7 @@ export function baseState(overrides: Partial<AutoModeState> = {}): AutoModeState
 		blockedActions: 0,
 		classifierAllowed: 0,
 		classifierDenied: 0,
+		classifierCost: 0,
 		recentDenials: [],
 		...overrides,
 	};
@@ -177,7 +178,7 @@ export function baseState(overrides: Partial<AutoModeState> = {}): AutoModeState
 
 export async function setupHookTest(options: {
 	config?: EffectiveConfig;
-	classifier?: () => Promise<ClassificationDecision>;
+	classifier?: () => Promise<ClassifyResult>;
 	ctx?: ReturnType<typeof createFakeCtx>;
 	analyze?: typeof analyzeBash;
 } = {}) {
