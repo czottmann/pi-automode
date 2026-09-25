@@ -121,7 +121,7 @@ Pi-automode blocks a `deniedPaths` match before classifier review or an allow ti
 
 The list does not govern `bash`. The classifier and deterministic hard-deny checks govern shell access to these paths.
 
-The value `allowInsideWorkingDirectory: true` allows file access inside the working directory locally. Pi-automode sends all outside file access to the classifier, including reads.
+The value `allowInsideWorkingDirectory: true` allows file access inside the working directory locally. Pi-automode sends all outside file access to the classifier, including reads. OMP's hashline `edit` names its targets in `[PATH#TAG]` section headers and `MV` renames rather than a `path` argument; every target is checked, and one call uses the local tier only when all of them are inside the working directory and unprotected.
 
 Classification starts with a conservative one-token filter. If the filter requests review, pi-automode requests one internal `classifier_decision` tool call.
 

@@ -558,6 +558,132 @@ test("allowInsideWorkingDirectory allows protected in-cwd reads without the clas
 	assert.equal(harness.classifierCalls, 0);
 });
 
+// omp's hashline `edit` tool carries no `path`: its targets are `[PATH#TAG]`
+// section headers inside `input`, plus an optional `MV DEST` rename.
+function hashlineEdit(...sections: string[]): { input: string } {
+	return { input: sections.join("\n") };
+}
+
+test("allowInsideWorkingDirectory allows in-cwd hashline edits without the classifier", async () => {
+	const harness = await setupHookTest({
+		config: baseConfig({ allowInsideWorkingDirectory: true }),
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "edit",
+		input: hashlineEdit(
+			"[src/app.ts#1A2B]\nPUT 1.=1:\n+x",
+			"[/tmp/project/docs/notes.md#C3D4]\nPUT >2:\n+[not/a/header#ABCD]",
+		),
+	}, harness.ctx);
+
+	assert.equal(result, undefined);
+	assert.equal(harness.classifierCalls, 0);
+});
+
+test("allowInsideWorkingDirectory classifies a hashline edit with any section outside cwd", async () => {
+	const harness = await setupHookTest({
+		config: baseConfig({ allowInsideWorkingDirectory: true }),
+		classifier: async () => ({ decision: "allow", tier: "allow", reason: "ok" }),
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "edit",
+		input: hashlineEdit(
+			"[src/app.ts#1A2B]\nPUT 1.=1:\n+x",
+			"[/etc/hosts#C3D4]\nPUT 1.=1:\n+y",
+		),
+	}, harness.ctx);
+
+	assert.equal(result, undefined);
+	assert.equal(harness.classifierCalls, 1);
+});
+
+test("allowInsideWorkingDirectory classifies a hashline rename out of cwd", async () => {
+	const harness = await setupHookTest({
+		config: baseConfig({ allowInsideWorkingDirectory: true }),
+		classifier: async () => ({ decision: "allow", tier: "allow", reason: "ok" }),
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "edit",
+		input: hashlineEdit('[src/app.ts#1A2B]\nMV "/tmp/elsewhere/app one.ts"'),
+	}, harness.ctx);
+
+	assert.equal(result, undefined);
+	assert.equal(harness.classifierCalls, 1);
+});
+
+test("allowInsideWorkingDirectory sends protected in-cwd hashline edits to the classifier", async () => {
+	const harness = await setupHookTest({
+		config: baseConfig({ allowInsideWorkingDirectory: true }),
+		classifier: async () => ({ decision: "allow", tier: "allow", reason: "ok" }),
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "edit",
+		input: hashlineEdit(
+			"[src/app.ts#1A2B]\nPUT 1.=1:\n+x",
+			"[.git/hooks/pre-commit#C3D4]\nPUT 1.=1:\n+y",
+		),
+	}, harness.ctx);
+
+	assert.equal(result, undefined);
+	assert.equal(harness.classifierCalls, 1);
+});
+
+test("deniedPaths hard-blocks a hashline edit when any section matches", async () => {
+	const harness = await setupHookTest({
+		config: baseConfig({ allowInsideWorkingDirectory: true, deniedPaths: ["*.env"] }),
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "edit",
+		input: hashlineEdit(
+			"[src/app.ts#1A2B]\nPUT 1.=1:\n+x",
+			"[.env#C3D4]\nPUT 1.=1:\n+SECRET=1",
+		),
+	}, harness.ctx) as { block?: boolean; reason?: string };
+
+	assert.equal(result.block, true);
+	assert.match(result.reason ?? "", /Path denied by policy/);
+	assert.equal(harness.classifierCalls, 0);
+});
+
+test("hashline edits without a parsable target still go to the classifier", async () => {
+	const harness = await setupHookTest({
+		config: baseConfig({ allowInsideWorkingDirectory: true }),
+		classifier: async () => ({ decision: "allow", tier: "allow", reason: "ok" }),
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "edit",
+		input: hashlineEdit("PUT 1.=1:\n+x"),
+	}, harness.ctx);
+
+	assert.equal(result, undefined);
+	assert.equal(harness.classifierCalls, 1);
+});
+
+test("deterministic hard-deny sees every hashline edit target", () => {
+	assert.match(
+		deterministicHardDeny(
+			"edit",
+			hashlineEdit("[src/app.ts#1A2B]\nPUT 1.=1:\n+x", "[~/.zshrc#C3D4]\nPUT >$:\n+y"),
+			"/tmp/project",
+		) ?? "",
+		/profile|persistence/i,
+	);
+	assert.match(
+		deterministicHardDeny(
+			"edit",
+			hashlineEdit("[src/app.ts#1A2B]\nMV .pi/automode.local.json"),
+			"/tmp/project",
+		) ?? "",
+		/safety-control/,
+	);
+});
+
 test("tool_call hook uses classifier mock for non-read-only actions", async () => {
 	const harness = await setupHookTest({
 		classifier: async () => ({ decision: "block", tier: "soft_deny", reason: "mock block" }),
