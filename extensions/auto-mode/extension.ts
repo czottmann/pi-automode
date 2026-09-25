@@ -32,6 +32,7 @@ import {
   writeGlobalClassifierModel,
 } from "./config.ts";
 import { deterministicHardDeny } from "./hard-deny.ts";
+import { JEV_API_KEY_ENV, JEV_PROVIDER } from "./jev.ts";
 import {
   createLogger,
   newDecisionId,
@@ -909,19 +910,29 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
           return;
         }
         const parsed = parseModelSpec(selected);
-        const model = parsed
-          ? ctx.modelRegistry.find(parsed.provider, parsed.id)
-          : undefined;
-        if (!model) {
-          ctx.ui.notify(`Model not found: ${selected}`, "error");
-          return;
+        let modelSpec: string;
+        if (parsed?.provider === JEV_PROVIDER) {
+          // TypeSafe is called directly, not through Pi's model registry.
+          if (!process.env[JEV_API_KEY_ENV]) {
+            ctx.ui.notify(`${JEV_API_KEY_ENV} is not set`, "error");
+            return;
+          }
+          modelSpec = selected;
+        } else {
+          const model = parsed
+            ? ctx.modelRegistry.find(parsed.provider, parsed.id)
+            : undefined;
+          if (!model) {
+            ctx.ui.notify(`Model not found: ${selected}`, "error");
+            return;
+          }
+          const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+          if (!auth.ok) {
+            ctx.ui.notify(auth.error, "error");
+            return;
+          }
+          modelSpec = formatModelSpec(model);
         }
-        const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-        if (!auth.ok) {
-          ctx.ui.notify(auth.error, "error");
-          return;
-        }
-        const modelSpec = formatModelSpec(model);
         try {
           saveClassifierModel(modelSpec);
         } catch (error) {

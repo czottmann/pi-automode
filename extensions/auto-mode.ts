@@ -12,6 +12,7 @@ export * from "./auto-mode/config.ts";
 export * from "./auto-mode/constants.ts";
 export * from "./auto-mode/extension.ts";
 export * from "./auto-mode/hard-deny.ts";
+export * from "./auto-mode/jev.ts";
 export * from "./auto-mode/log.ts";
 export * from "./auto-mode/model.ts";
 export * from "./auto-mode/model-selector.ts";

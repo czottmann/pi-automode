@@ -204,3 +204,15 @@ For example, register an OpenRouter preset in the built-in `openrouter` provider
 ```
 
 Restart Pi (or run `/reload`), then select the model with `/automode model openrouter/@preset/nvidia-nemotron-3-nano-30b-a3b-fast`.
+
+## TypeSafe Jev classifier
+
+Set `classifierModel` to `typesafe/jev-latest` to classify with TypeSafe's Jev System One model instead of an LLM. Set `TYPESAFE_API_KEY` in Pi's environment. `/automode model typesafe/jev-latest` saves it without a model-registry lookup.
+
+Jev replaces both LLM stages with one call. The configured `hard_deny` and `soft_deny` rules become the options of a Choice question. Two Noul questions check for an ALLOW exception and direct user authorization. Pi-automode then decides locally:
+
+- Allow when the probability of "no deny rule" is at least 0.8.
+- Block with `hard_deny` when a hard-deny rule is the top match, or when hard-deny rules together hold at least 0.2 probability.
+- Otherwise, the top soft-deny rule blocks unless the ALLOW-exception or user-authorization probability is at least 0.8.
+
+The denial reason names the matched rule. `classifierReasoningLevel` and `fastClassifierMaxTokens` do not apply. `classifierTimeoutMs` does. Request errors, missing keys, and malformed answers fail closed.
