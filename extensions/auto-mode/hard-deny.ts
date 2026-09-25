@@ -99,6 +99,7 @@ const SYSTEM_ROOTS: ReadonlyArray<string> = [
   "/sbin",
   "/sys",
   "/System",
+  "/Users",
   "/usr",
   "/var",
 ];
@@ -327,7 +328,9 @@ function segmentHardDeny(
   }
 
   if (name === "find" && lowerArgs.includes("-delete")) {
-    const root = shellPathTokenToPath(args[0] ?? "", cwd);
+    let rootIndex = 0;
+    while (["-H", "-L", "-P"].includes(args[rootIndex] ?? "")) rootIndex++;
+    const root = shellPathTokenToPath(args[rootIndex] ?? "", cwd);
     const policyRoot = root ? (resolvePathForPolicy(root) ?? root) : undefined;
     const policyHome = resolvePathForPolicy(HOME) ?? HOME;
     if (

@@ -220,6 +220,8 @@ test("AST hard-deny checks protect recursive rm variants and system roots", () =
 		"rm -rf /run",
 		"rm -rf /System",
 		"rm -rf /Library",
+		"rm -rf /Users",
+		"rm -rf /Users/another-user",
 		"rm -rf ~root",
 		`rm -rf ~root/"child"`,
 	]) {
@@ -379,6 +381,8 @@ test("isRootHomeOrSystemPath exempts home subtree but keeps home root and system
 	assert.equal(isRootHomeOrSystemPath("/run/service", stdHome), true);
 	assert.equal(isRootHomeOrSystemPath("/System/Library", stdHome), true);
 	assert.equal(isRootHomeOrSystemPath("/Library/LaunchDaemons", stdHome), true);
+	assert.equal(isRootHomeOrSystemPath("/Users", stdHome), true);
+	assert.equal(isRootHomeOrSystemPath("/Users/another-user", stdHome), true);
 	assert.equal(isRootHomeOrSystemPath("/etc/hosts", stdHome), true);
 	assert.equal(isRootHomeOrSystemPath("/opt/app", stdHome), false);
 	assert.equal(isRootHomeOrSystemPath("/srv/app", stdHome), false);
@@ -503,5 +507,28 @@ test("AST hard-deny applies temp policy to find -delete roots", () => {
 	assert.match(
 		deterministicHardDeny("bash", { command: "find /tmp -delete" }, process.cwd()) ?? "",
 		/system-wide delete/,
+	);
+});
+
+test("AST hard-deny checks find global options before system-wide delete roots", () => {
+	for (const command of [
+		"find -H /etc -delete",
+		"find -L /etc -delete",
+		"find -H -L /etc -delete",
+		"find -P /Users -delete",
+	]) {
+		assert.match(
+			deterministicHardDeny("bash", { command }, process.cwd()) ?? "",
+			/system-wide delete/,
+			command,
+		);
+	}
+	assert.equal(
+		deterministicHardDeny(
+			"bash",
+			{ command: "find -H /tmp/automode-find-subtree -delete" },
+			process.cwd(),
+		),
+		undefined,
 	);
 });
