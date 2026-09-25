@@ -102,18 +102,49 @@ export function resolveToolInputPath(
   return existingReadVariant(resolved);
 }
 
-/** The effective target path of a file tool, including Pi's `.` defaults. */
-export function extractInputPath(
+/**
+ * Every target path of a file tool, including Pi's `.` defaults, or
+ * `undefined` when none can be determined (callers then fail closed to the
+ * classifier).
+ *
+ * oh-my-pi's hashline `edit` has no `path` argument: one call may touch
+ * several files, each named by a `[PATH#TAG]` section header in `input`, and
+ * may rename a file with `MV DEST`. Body lines always start with `+`, so a
+ * header or op can never be confused with inserted text.
+ */
+export function extractInputPaths(
   toolName: string,
   input: Record<string, unknown>,
-): string | undefined {
+): string[] | undefined {
   if (!PATH_BEARING_TOOLS.has(toolName)) return undefined;
   const value = input.path;
-  if (typeof value === "string" && value !== "") return value;
+  if (typeof value === "string" && value !== "") return [value];
   if (toolName === "grep" || toolName === "find" || toolName === "ls") {
-    return ".";
+    return ["."];
   }
-  return typeof value === "string" ? value : undefined;
+  if (toolName === "edit" && typeof input.input === "string") {
+    const paths = hashlineEditTargets(input.input);
+    return paths.length > 0 ? paths : undefined;
+  }
+  return typeof value === "string" ? [value] : undefined;
+}
+
+const HASHLINE_HEADER = /^\[(.+)#[0-9A-Fa-f]{4}\]\s*$/;
+const HASHLINE_MOVE = /^MV\s+(?:"([^"]+)"|'([^']+)'|(\S.*?))\s*$/;
+
+function hashlineEditTargets(text: string): string[] {
+  const paths: string[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const header = HASHLINE_HEADER.exec(line);
+    if (header?.[1]) {
+      paths.push(header[1]);
+      continue;
+    }
+    const move = HASHLINE_MOVE.exec(line);
+    const dest = move?.[1] ?? move?.[2] ?? move?.[3];
+    if (dest) paths.push(dest);
+  }
+  return paths;
 }
 
 /** Expand a leading `~`, `$HOME`, or `${HOME}` in a path-denial pattern. */

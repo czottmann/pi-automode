@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## Bug fixes
+
+- **OMP hashline edit paths** — Read OMP hashline `edit` targets from `[PATH#TAG]` headers and `MV` renames. `deniedPaths`, `allowInsideWorkingDirectory`, protected paths and deterministic hard-deny checks now apply to every target instead of sending each edit to the classifier.
+
 ## [1.17.0] - 2026-09-22
 
 ## New features

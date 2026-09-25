@@ -9,6 +9,7 @@ import {
 } from "./bash.ts";
 import { HOME } from "./constants.ts";
 import {
+  extractInputPaths,
   isProfileOrAuthorizedKeysPath,
   isSafetyControlPath,
   resolveInputPath,
@@ -395,14 +396,16 @@ export function deterministicHardDeny(
   bashAnalysis?: BashAnalysis,
 ): string | undefined {
   if (toolName === "write" || toolName === "edit") {
-    const path = resolveInputPath(cwd, input.path);
-    if (!path) return undefined;
-    const policyPath = resolvePathForPolicy(path) ?? path;
     const policyCwd = resolvePathForPolicy(cwd) ?? cwd;
-    const profileReason = isProfileOrAuthorizedKeysPath(policyPath);
-    if (profileReason) return profileReason;
-    if (isSafetyControlPath(policyPath, policyCwd)) {
-      return "auto-mode or permission safety-control modification is hard-denied";
+    for (const inputPath of extractInputPaths(toolName, input) ?? []) {
+      const path = resolveInputPath(cwd, inputPath);
+      if (!path) continue;
+      const policyPath = resolvePathForPolicy(path) ?? path;
+      const profileReason = isProfileOrAuthorizedKeysPath(policyPath);
+      if (profileReason) return profileReason;
+      if (isSafetyControlPath(policyPath, policyCwd)) {
+        return "auto-mode or permission safety-control modification is hard-denied";
+      }
     }
   }
 
