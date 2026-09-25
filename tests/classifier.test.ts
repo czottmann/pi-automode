@@ -829,6 +829,29 @@ test("classifyInStages allows when the fast request fits and returns zero", asyn
 	assert.equal(attempts[0]?.stage, "fast");
 });
 
+test("Codex classifier requests do not retain session WebSockets", async () => {
+	const { fn, calls } = fakeComplete([assistantWith("1"), assistantWithDecision()]);
+	const classifier = {
+		model: {
+			provider: "openai-codex",
+			id: "gpt-test",
+			api: "openai-codex-responses",
+			contextWindow: 200_000,
+			maxTokens: 32_000,
+		} as any,
+	};
+	const decision = await classifyInStages(
+		fn,
+		classifier,
+		stagedPrompt(),
+		undefined,
+		{ sessionId: "pi-automode:test-session" },
+	);
+
+	assert.equal(decision.decision, "allow");
+	assert.deepEqual(calls.map((call) => call.cacheRetention), ["none", "none"]);
+});
+
 test("classifyInStages blocks before detailed review when only the fast request fits", async () => {
 	const { fn, calls } = fakeComplete([assistantWith("1")]);
 	const attempts: ClassifierIoAttempt[] = [];

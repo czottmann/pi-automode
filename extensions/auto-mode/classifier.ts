@@ -280,7 +280,14 @@ async function completeClassifierAttempt(
   parentSignal: AbortSignal | undefined,
   options: Omit<Parameters<ClassifierCompletionFn>[2], "signal">,
 ): Promise<AssistantMessage> {
-  const requestOptions = withSessionHeaders(model, options);
+  // Codex caches WebSockets by session ID. Pi cleans up its own session ID,
+  // but not the classifier's separate cache ID, so retain no classifier socket.
+  const requestOptions = withSessionHeaders(model, {
+    ...options,
+    cacheRetention: model.api === "openai-codex-responses"
+      ? "none"
+      : options.cacheRetention,
+  });
   if (options.timeoutMs === undefined) {
     return completeFn(model, prompt, {
       ...requestOptions,
