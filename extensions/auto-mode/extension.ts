@@ -22,8 +22,8 @@ import {
   DEFAULT_PROTECTED_PATHS,
   DEFAULT_SOFT_DENY,
   PATH_BEARING_TOOLS,
-  PI_GLOBAL_SETTINGS,
   READ_ONLY_TOOLS,
+  piGlobalSettingsPaths,
 } from "./constants.ts";
 import {
   type GlobalConfigPreparation,
@@ -185,7 +185,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
   return function piAutomode(pi: ExtensionAPI) {
     const globalConfig = options.prepareGlobalConfig?.() ??
       (options.loadConfig
-        ? { status: "current" as const, activePath: PI_GLOBAL_SETTINGS[0] }
+        ? { status: "current" as const, activePath: piGlobalSettingsPaths()[0] }
         : prepareGlobalConfig());
     const loadConfigWithDiagnostics = (
       cwd: string,

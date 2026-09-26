@@ -8,6 +8,8 @@ It reads `autoMode` only from Pi-owned configuration sources:
 - `.pi/automode.local.json` for trusted projects
 - `PI_AUTOMODE_SETTINGS_JSON`
 
+`~/.pi/agent` is Pi's default agent directory. When `PI_CODING_AGENT_DIR` is set, the extension uses Pi's effective agent directory for global config, migration, and logs instead.
+
 At startup, pi-automode moves a legacy `~/.pi/agent/automode.json` file to the new global path. If both files exist, it uses the new file and reports the conflict. If migration fails, it uses the legacy file for that session and reports the error.
 
 It does not read project configuration until Pi trusts the project. For an untrusted project, it ignores `.pi/automode.local.json` and `.pi/automode.json`. `/automode config` reports each ignored file that exists.
