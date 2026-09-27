@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import {
 	DEFAULT_LOG_CONFIG,
 	DEFAULT_PROTECTED_PATHS,
+	DEFAULT_STATUS_FORMAT,
 	analyzeBash,
 	createPiAutomode,
 	type AutoModeState,
@@ -146,6 +147,7 @@ export function baseConfig(overrides: Partial<EffectiveConfig> = {}): EffectiveC
 		enabled: true,
 		classifyReadOnlyTools: false,
 		allowInsideWorkingDirectory: false,
+		statusFormat: DEFAULT_STATUS_FORMAT,
 		deniedPaths: [],
 		fastClassifierMaxTokens: 512,
 		classifierTimeoutMs: 20_000,

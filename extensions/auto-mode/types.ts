@@ -48,6 +48,8 @@ export type AutoModeSettings = {
   classifierTimeoutMs?: number;
   /** When true, file tools whose resolved path is inside the working directory are allowed deterministically (no classifier), and outside-CWD file access is classified. */
   allowInsideWorkingDirectory?: boolean;
+  /** Display-only template for the footer status line. Unknown tokens are left as written. */
+  statusFormat?: string;
   /** Path glob patterns (file tools) that are always denied before the classifier. Supports `~` and `*` (matches any characters, including `/`). */
   deniedPaths?: unknown;
   maxUserTranscriptTokens?: number;
@@ -95,6 +97,7 @@ export type EffectiveConfig = {
   fastClassifierMaxTokens: number;
   classifierTimeoutMs: number;
   allowInsideWorkingDirectory: boolean;
+  statusFormat: string;
   deniedPaths: string[];
   maxUserTranscriptTokens: number;
   maxToolTranscriptTokens: number;

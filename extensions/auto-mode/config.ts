@@ -11,6 +11,7 @@ import { dirname, resolve } from "node:path";
 import {
   DEFAULT_ALLOW,
   DEFAULT_ALLOW_INSIDE_WORKING_DIRECTORY,
+  DEFAULT_STATUS_FORMAT,
   DEFAULT_CLASSIFIER_TIMEOUT_MS,
   DEFAULT_CLASSIFY_READ_ONLY_TOOLS,
   DEFAULT_DENIED_PATHS,
@@ -23,6 +24,7 @@ import {
   DEFAULT_PROTECTED_PATHS,
   DEFAULT_SOFT_DENY,
   MAX_CLASSIFIER_TIMEOUT_MS,
+  MAX_STATUS_FORMAT_LENGTH,
   PI_GLOBAL_SETTINGS,
   PI_LEGACY_GLOBAL_SETTINGS,
   PI_PROJECT_LOCAL_SETTINGS,
@@ -286,6 +288,7 @@ export function validateSettingsFile(
         "classifyReadOnlyTools",
         "fastClassifierMaxTokens",
         "allowInsideWorkingDirectory",
+        "statusFormat",
         "deniedPaths",
         "maxUserTranscriptTokens",
         "maxToolTranscriptTokens",
@@ -357,6 +360,15 @@ export function validateSettingsFile(
       ) {
         diagnostics.push(
           `${source}: autoMode.allowInsideWorkingDirectory must be a boolean`,
+        );
+      }
+      if (
+        hasOwn(autoMode, "statusFormat") &&
+        (typeof autoMode.statusFormat !== "string" ||
+          (autoMode.statusFormat as string).length > MAX_STATUS_FORMAT_LENGTH)
+      ) {
+        diagnostics.push(
+          `${source}: autoMode.statusFormat must be a string of at most ${MAX_STATUS_FORMAT_LENGTH} characters`,
         );
       }
       validateDeniedPathsSetting(
@@ -603,6 +615,12 @@ function validFastClassifierBudget(value: unknown): value is number {
   return Number.isInteger(value) && Number(value) >= 16;
 }
 
+function isValidStatusFormat(
+  value: unknown,
+): value is string {
+  return typeof value === "string" && value.length <= MAX_STATUS_FORMAT_LENGTH;
+}
+
 function validClassifierTimeout(value: unknown): value is number {
   return Number.isInteger(value) &&
     Number(value) >= 1000 &&
@@ -632,6 +650,9 @@ function applyAutoModeScalars(
       typeof settings.allowInsideWorkingDirectory === "boolean"
         ? settings.allowInsideWorkingDirectory
         : base.allowInsideWorkingDirectory,
+    statusFormat: isValidStatusFormat(settings.statusFormat)
+      ? settings.statusFormat
+      : base.statusFormat,
     fastClassifierMaxTokens: validFastClassifierBudget(
         settings.fastClassifierMaxTokens,
       )
@@ -685,6 +706,7 @@ export function buildEffectiveConfigFromSources(
     enabled: true,
     classifyReadOnlyTools: DEFAULT_CLASSIFY_READ_ONLY_TOOLS,
     allowInsideWorkingDirectory: DEFAULT_ALLOW_INSIDE_WORKING_DIRECTORY,
+    statusFormat: DEFAULT_STATUS_FORMAT,
     deniedPaths: [...DEFAULT_DENIED_PATHS],
     fastClassifierMaxTokens: DEFAULT_FAST_CLASSIFIER_MAX_TOKENS,
     classifierTimeoutMs: DEFAULT_CLASSIFIER_TIMEOUT_MS,

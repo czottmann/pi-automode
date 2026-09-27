@@ -60,6 +60,14 @@ A matching path blocks the call without classifier review or an override. The li
 
 `allowInsideWorkingDirectory` uses scalar precedence: global, then project-local, then `PI_AUTOMODE_SETTINGS_JSON`. `deniedPaths` entries accumulate across these configuration sources.
 
+`statusFormat` is a display-only template for the footer status line. It supports `{circle}` (or `{state}`), `{allowed}`, `{blocked}`, `{checked}`, `{classifierAllowed}`, `{classifierDenied}`, and `{classifier}` (the conditional ` ca:x cd:y` segment). Unknown tokens are left as written, and an empty string renders an empty status. The default reproduces the built-in layout:
+
+```json
+{ "autoMode": { "statusFormat": "AM {circle} a:{allowed} d:{blocked}{classifier}" } }
+```
+
+`statusFormat` uses the same scalar precedence as the other scalar settings. Changing it never changes what the guardrail enforces.
+
 Shared project `.pi/automode.json` cannot set either field. Omitting either field at a higher-precedence source does not clear a lower-source value.
 
 Example:
@@ -73,6 +81,7 @@ Example:
     "fastClassifierMaxTokens": 512,
     "classifierTimeoutMs": 20000,
     "allowInsideWorkingDirectory": false,
+    "statusFormat": "AM {circle} a:{allowed} d:{blocked}{classifier}",
     "deniedPaths": [],
     "maxUserTranscriptTokens": 4000,
     "maxToolTranscriptTokens": 4000,

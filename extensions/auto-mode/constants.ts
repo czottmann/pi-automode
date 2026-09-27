@@ -219,6 +219,10 @@ export const DEFAULT_FAST_CLASSIFIER_MAX_TOKENS = 512;
  */
 export const DEFAULT_ALLOW_INSIDE_WORKING_DIRECTORY = false;
 
+export const DEFAULT_STATUS_FORMAT = "AM {circle} a:{allowed} d:{blocked}{classifier}";
+
+export const MAX_STATUS_FORMAT_LENGTH = 120;
+
 /** Default path deny list: empty (no built-in secrets list). */
 export const DEFAULT_DENIED_PATHS: string[] = [];
 

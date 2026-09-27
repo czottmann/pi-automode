@@ -20,7 +20,26 @@ export function statusLine(
   const classifier = state.classifierAllowed > 0 || state.classifierDenied > 0
     ? ` ca:${state.classifierAllowed} cd:${state.classifierDenied}`
     : "";
-  return `AM ${circle} a:${allowed} d:${state.blockedActions}${classifier}`;
+  return renderStatusFormat(config.statusFormat, {
+    circle,
+    allowed: String(allowed),
+    blocked: String(state.blockedActions),
+    checked: String(state.checkedActions),
+    classifierAllowed: String(state.classifierAllowed),
+    classifierDenied: String(state.classifierDenied),
+    classifier,
+  });
+}
+
+function renderStatusFormat(
+  format: string,
+  tokens: Record<string, string>,
+): string {
+  let rendered = format;
+  for (const [token, value] of Object.entries(tokens)) {
+    rendered = rendered.replaceAll(`{${token}}`, value);
+  }
+  return rendered;
 }
 
 export function statusText(
