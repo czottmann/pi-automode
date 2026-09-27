@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## New features
+
+- **Trusted tool results as classifier evidence** — Add `autoMode.trustedToolResults`. Tools listed there have their results included in the classifier transcript, so user-mediated decisions, such as answers from an ask-user questionnaire, reach the classifier as direct user intent. Entries are tool names, optionally pinned to a source-path glob with `name@glob`; entries that match no registered tool are ignored: resolution fails closed. (#74)
+
 ## Bug fixes
 
 - **System-wide delete checks** — Block recursive deletion of `/Users` and its subdirectories. Check the search root after `find -H`, `-L`, or `-P` before `-delete`.

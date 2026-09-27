@@ -132,6 +132,9 @@ Pi AI requests schema-constrained sampling with `strict: "prefer"`. Supported pr
 Both stages receive the complete current tool input in a dedicated message. Transcript truncation cannot remove action content. If the exact input cannot fit in the classifier context, auto mode blocks the call.
 
 Both stages use a classifier-specific session key. They request short cache retention from providers that support it. A missing model, provider failure, or invalid response blocks the action.
+
+Tool results are untrusted by default and never reach the classifier. Set `autoMode.trustedToolResults` to include results of tools you explicitly trust — typically an ask-user questionnaire, so your dialog answers reach the classifier as direct user intent. Entries are tool names (`"ask_user_question"`), optionally pinned to one installed source with `name@glob`. See [Configuration](docs/configuration.md#trustedtoolresults).
+
 Pi-automode parses Bash structure with `unbash` before permission and deterministic hard-deny checks. The analysis includes nested commands and literal shell-wrapper scripts. A Bash parse error blocks the action.
 
 ## Examples

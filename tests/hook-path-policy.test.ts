@@ -143,6 +143,73 @@ test("validateSettingsFile accepts valid allowInsideWorkingDirectory and deniedP
 	assert.equal(diagnostics.length, 0);
 });
 
+test("trustedToolResults defaults to empty and accumulates across user-owned sources", () => {
+	const empty = buildEffectiveConfigFromSources({});
+	assert.deepEqual(empty.trustedToolResults, []);
+
+	const merged = buildEffectiveConfigFromSources({
+		globalSettings: [{ autoMode: { trustedToolResults: ["ask_user_question"] } }],
+		projectLocalSettings: [{
+			autoMode: { trustedToolResults: ["my_question_tool"] },
+		}],
+		inlineSettings: [{
+			autoMode: { trustedToolResults: ["ask_user_question"] },
+		}],
+	});
+	assert.deepEqual(merged.trustedToolResults, [
+		"ask_user_question",
+		"my_question_tool",
+	]);
+});
+
+test("shared project config cannot add trustedToolResults", () => {
+	const config = buildEffectiveConfigFromSources({
+		projectSharedSettings: [{
+			autoMode: { trustedToolResults: ["ask_user_question"] },
+		}],
+	});
+	assert.deepEqual(config.trustedToolResults, []);
+});
+
+test("validateSettingsFile rejects malformed trustedToolResults", () => {
+	const d1 = validateSettingsFile(
+		{ autoMode: { trustedToolResults: "ask_user_question" } },
+		"inline",
+	);
+	assert.ok(
+		d1.some((x) => /trustedToolResults must be an array of strings/.test(x)),
+	);
+	const d2 = validateSettingsFile(
+		{ autoMode: { trustedToolResults: ["", "name@"] } },
+		"inline",
+	);
+	assert.ok(
+		d2.some((x) =>
+			/trustedToolResults\[0\] must be a non-empty tool name or name@glob/.test(x)
+		),
+	);
+	assert.ok(
+		d2.some((x) =>
+			/trustedToolResults\[1\] must be a non-empty tool name or name@glob/.test(x)
+		),
+	);
+});
+
+test("validateSettingsFile accepts valid trustedToolResults", () => {
+	const diagnostics = validateSettingsFile(
+		{
+			autoMode: {
+				trustedToolResults: [
+					"ask_user_question",
+					"ask_user_question@**/rpiv-ask-user-question/**",
+				],
+			},
+		},
+		"inline",
+	);
+	assert.equal(diagnostics.length, 0);
+});
+
 test("validateSettingsFile flags deniedPaths patterns that can never match an absolute path", () => {
 	const diagnostics = validateSettingsFile(
 		{ autoMode: { deniedPaths: ["config.json", "src/secret.txt", "~foo"] } },

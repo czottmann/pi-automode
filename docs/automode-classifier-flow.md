@@ -313,8 +313,9 @@ Pi-automode builds the transcript from active Pi context entries. It includes on
 
 - user text
 - assistant tool-call names and payloads
+- tool results of tools listed in `autoMode.trustedToolResults`, resolved against the currently registered tools (built-in source for a bare `name`, or a `name@glob` source-path pin for extension tools). These results share the tool-evidence budget and capture user-mediated decisions such as questionnaire answers.
 
-Pi-automode excludes assistant prose, hidden reasoning, and tool results. User evidence and tool-call evidence have separate approximate-token budgets. Both budgets default to 4000.
+Pi-automode excludes assistant prose, hidden reasoning, and all other tool results. User evidence and tool-call evidence have separate approximate-token budgets. Both budgets default to 4000.
 
 The selector keeps the first and latest user messages. It fills the remaining budget from the newest eligible entries. It renders retained evidence in chronological order. It also marks omitted or truncated evidence.
 

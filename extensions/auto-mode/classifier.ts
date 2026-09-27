@@ -853,6 +853,7 @@ export const defaultClassifyAction: ClassifyAction = async (
   config,
   action,
   loadedContext,
+  trustedToolResults,
 ): Promise<ClassifyResult> => {
   const resolution = await resolveClassifier(ctx, config);
   if (!resolution.classifier || !resolution.completionPlan) {
@@ -870,6 +871,7 @@ export const defaultClassifyAction: ClassifyAction = async (
   const transcript = buildClassifierTranscript(ctx, {
     maxUserTokens: config.maxUserTranscriptTokens,
     maxToolTokens: config.maxToolTranscriptTokens,
+    trustedToolResults,
   });
   const contextText = `<loaded-project-instructions>\n${
     loadedContext || "(none)"

@@ -1,4 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { matchesWildcardPattern } from "./permissions.ts";
 import { safeJson, truncateMiddle } from "./utils.ts";
 
 const MAX_USER_ENTRY_TOKENS = 1000;
@@ -9,13 +10,15 @@ const CHARS_PER_APPROX_TOKEN = 4;
 type TranscriptEntry = {
   index: number;
   order: number;
-  kind: "user" | "tool";
+  kind: "user" | "tool" | "toolResult";
   text: string;
 };
 
 export type ClassifierTranscriptBudgets = {
   maxUserTokens: number;
   maxToolTokens: number;
+  /** Registered tool names whose results may appear as classifier evidence. */
+  trustedToolResults?: ReadonlySet<string>;
 };
 
 function flattenUserContent(content: unknown): string {
@@ -86,7 +89,10 @@ function truncateToTokenCap(
   };
 }
 
-function collectTranscriptEntries(ctx: ExtensionContext): TranscriptEntry[] {
+function collectTranscriptEntries(
+  ctx: ExtensionContext,
+  trustedToolResults: ReadonlySet<string>,
+): TranscriptEntry[] {
   const entries: TranscriptEntry[] = [];
   const sessionManager = ctx.sessionManager as typeof ctx.sessionManager & {
     buildContextEntries?: () => ReturnType<typeof ctx.sessionManager.getBranch>;
@@ -100,6 +106,25 @@ function collectTranscriptEntries(ctx: ExtensionContext): TranscriptEntry[] {
     if (message.role === "user") {
       const text = flattenUserContent(message.content).trim();
       if (text) entries.push({ index, order: 0, kind: "user", text });
+      continue;
+    }
+    if (message.role === "toolResult") {
+      // Tool results are untrusted by default. Results from tools listed in
+      // `trustedToolResults` enter the evidence channel so that user-mediated
+      // decisions, such as questionnaire answers, reach the classifier.
+      const toolName = (message as { toolName?: unknown }).toolName;
+      if (typeof toolName !== "string" || !trustedToolResults.has(toolName)) {
+        continue;
+      }
+      const text = flattenUserContent(message.content).trim();
+      if (text) {
+        entries.push({
+          index,
+          order: 0,
+          kind: "toolResult",
+          text: `${toolName}: ${text}`,
+        });
+      }
       continue;
     }
     if (message.role !== "assistant") continue;
@@ -168,7 +193,9 @@ function selectToolEntries(
   entries: TranscriptEntry[],
   maxTokens: number,
 ): { selected: TranscriptEntry[]; omitted: boolean } {
-  const tools = entries.filter((entry) => entry.kind === "tool");
+  const tools = entries.filter(
+    (entry) => entry.kind === "tool" || entry.kind === "toolResult",
+  );
   const selected: TranscriptEntry[] = [];
   let usedTokens = 0;
 
@@ -176,8 +203,9 @@ function selectToolEntries(
     if (selected.length >= MAX_RECENT_TOOL_ENTRIES) break;
     const entry = tools[index];
     if (!entry) continue;
+    const prefix = entry.kind === "toolResult" ? "ToolResult " : "ToolCall ";
     const truncated = truncateToTokenCap(
-      `ToolCall ${entry.text}`,
+      `${prefix}${entry.text}`,
       Math.min(MAX_TOOL_ENTRY_TOKENS, maxTokens),
     );
     const tokens = approximateTokenCount(truncated.text);
@@ -190,8 +218,9 @@ function selectToolEntries(
   return {
     selected,
     omitted: selected.length < tools.length || tools.some((entry) =>
-      approximateTokenCount(`ToolCall ${entry.text}`) >
-        Math.min(MAX_TOOL_ENTRY_TOKENS, maxTokens)
+      approximateTokenCount(
+        `${entry.kind === "toolResult" ? "ToolResult " : "ToolCall "}${entry.text}`,
+      ) > Math.min(MAX_TOOL_ENTRY_TOKENS, maxTokens)
     ),
   };
 }
@@ -201,7 +230,10 @@ export function buildClassifierTranscript(
   ctx: ExtensionContext,
   budgets: ClassifierTranscriptBudgets,
 ): string {
-  const entries = collectTranscriptEntries(ctx);
+  const entries = collectTranscriptEntries(
+    ctx,
+    budgets.trustedToolResults ?? new Set<string>(),
+  );
   const users = selectUserEntries(entries, budgets.maxUserTokens);
   const tools = selectToolEntries(entries, budgets.maxToolTokens);
   const selected = [...users.selected, ...tools.selected].sort(
@@ -216,6 +248,56 @@ export function buildClassifierTranscript(
     });
   }
   return selected.map((entry) => entry.text).join("\n");
+}
+
+type RegisteredToolSource = {
+  name: string;
+  sourceInfo?: { path?: string; source?: string };
+};
+
+function isBuiltinToolSource(source: RegisteredToolSource): boolean {
+  const info = source.sourceInfo;
+  if (!info) return false;
+  return info.source === "builtin" ||
+    (typeof info.path === "string" && info.path.startsWith("<builtin:"));
+}
+
+/**
+ * Resolve configured `trustedToolResults` entries against the currently
+ * registered tools. A bare `name` entry trusts every registered tool with
+ * that name: the user's explicit config listing is the trust declaration,
+ * the same tier as a `permissions.allow` pattern. A `name@glob` entry is
+ * optional precision: it applies only when the registered tool's canonical
+ * source path matches the glob. Malformed entries and empty names are
+ * ignored: resolution fails closed.
+ */
+export function resolveTrustedToolResults(
+  entries: readonly string[],
+  tools: readonly RegisteredToolSource[],
+  canonicalize: (path: string) => string = (path) => path,
+): Set<string> {
+  const trusted = new Set<string>();
+  for (const entry of entries) {
+    if (typeof entry !== "string" || entry.trim() === "") continue;
+    const separator = entry.indexOf("@");
+    const name = separator < 0 ? entry : entry.slice(0, separator);
+    const glob = separator < 0 ? undefined : entry.slice(separator + 1);
+    if (!name || separator === 0 || (glob !== undefined && glob === "")) {
+      continue;
+    }
+    for (const tool of tools) {
+      if (tool.name !== name) continue;
+      if (glob === undefined || isBuiltinToolSource(tool)) {
+        trusted.add(name);
+        continue;
+      }
+      const path = canonicalize(tool.sourceInfo?.path ?? "");
+      if (path && matchesWildcardPattern(glob, path)) {
+        trusted.add(name);
+      }
+    }
+  }
+  return trusted;
 }
 
 export function loadedContextFromSystemPromptOptions(options: unknown): string {

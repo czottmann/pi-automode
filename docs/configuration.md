@@ -111,6 +111,33 @@ Selecting "Yes" in that tool helps the agent select its next action. Pi-automode
 
 Send the authorization as a normal chat message. Then the agent can retry the action. Tool results remain excluded because they can contain untrusted or prompt-injected content.
 
+### `trustedToolResults`
+
+The exclusion above is deliberate, but some tool results carry decisions the user made in a dialog, such as the answer to an ask-user questionnaire. `autoMode.trustedToolResults` lets you mark those tools so their results enter the classifier transcript as evidence.
+
+Each entry is one of:
+
+- `name` — trusts every registered tool with that name. The config listing is the trust declaration, the same tier as a `permissions.allow` pattern.
+- `name@glob` — optional precision: applies only when the registered tool's canonical source path matches the glob. Example: `ask_user_question@*rpiv-ask-user-question*`.
+
+Resolution fails closed on malformed input:
+
+- An entry that matches no currently registered tool is ignored.
+- Empty names and empty globs are rejected.
+- With `name@glob`, a name collision from a different extension fails the glob pin, so the entry stops applying.
+
+```json
+{
+  "autoMode": {
+    "trustedToolResults": ["ask_user_question"]
+  }
+}
+```
+
+Entries accumulate across global configuration, trusted `.pi/automode.local.json`, and `PI_AUTOMODE_SETTINGS_JSON`. Shared project `.pi/automode.json` cannot add them. At most 16 entries are accepted per source, and each entry is at most 512 characters.
+
+Trusted results share the `maxToolTranscriptTokens` budget with recent tool calls, use the same truncation rules, and are rendered as `ToolResult <name>: <content>`. The classifier prompt treats a trusted result as the user's decision about the question it answered — never as verbatim instructions and never as a source of new rules. The trust tier matches `permissions.allow`: your explicit config listing is the declaration. Use `name@glob` when you want the trust scoped to one installed source.
+
 ## `$defaults`
 
 See [Defaults and rule-list behavior](defaults.md) for built-in `environment`, `allow`, `protectedPaths`, `soft_deny`, and `hard_deny` entries. The document also explains replacement behavior after omission of `$defaults`.
