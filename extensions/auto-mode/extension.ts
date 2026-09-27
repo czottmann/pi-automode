@@ -63,7 +63,7 @@ import {
   statusText,
   classifierStatusLines,
 } from "./state.ts";
-import { loadedContextFromSystemPromptOptions } from "./transcript.ts";
+import { loadedContextFromSystemPromptOptions, resolveTrustedToolResults } from "./transcript.ts";
 import type {
   AutoModeState,
   ClassifierReasoningLog,
@@ -760,6 +760,11 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
         cfg,
         serializeClassifierAction(event.toolName, input),
         loadedContext,
+        resolveTrustedToolResults(
+          cfg.trustedToolResults,
+          pi.getAllTools?.() ?? [],
+          canonicalPath,
+        ),
       );
       state.lastClassifier = decision.classifier;
       logClassifierIo(decision, logCtx);

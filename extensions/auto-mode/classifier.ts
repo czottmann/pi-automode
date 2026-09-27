@@ -892,6 +892,7 @@ export const defaultClassifyAction: ClassifyAction = async (
   config,
   action,
   loadedContext,
+  trustedToolResults,
 ): Promise<ClassifyResult> => {
   const run: NonNullable<ClassifyResult["classifier"]> = { failures: [] };
   let result: ClassifyResult = {
@@ -904,6 +905,7 @@ export const defaultClassifyAction: ClassifyAction = async (
   const transcript = buildClassifierTranscript(ctx, {
     maxUserTokens: config.maxUserTranscriptTokens,
     maxToolTokens: config.maxToolTranscriptTokens,
+    trustedToolResults,
   });
   const contextText = `<loaded-project-instructions>\n${
     loadedContext || "(none)"

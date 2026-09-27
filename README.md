@@ -141,6 +141,8 @@ Both stages use a classifier-specific session key. They request short cache rete
 
 Set `autoMode.classifierFallbackModels` to try an ordered list of replacement models after model resolution, authentication, or request failures. Each action starts with the primary model. Cancellation and valid decisions never trigger fallback. Without a fallback list, infrastructure failures block the action as before. See [Configuration](docs/configuration.md) for the failure conditions and timeout behavior.
 
+Tool results are untrusted by default and never reach the classifier. Set `autoMode.trustedToolResults` to include results of tools you explicitly trust — typically an ask-user questionnaire, so your dialog answers reach the classifier as direct user intent. Entries are tool names (`"ask_user_question"`), optionally pinned to one installed source with `name@glob`. See [Configuration](docs/configuration.md#trustedtoolresults).
+
 Pi-automode parses Bash structure with `unbash` before permission and deterministic hard-deny checks. The analysis includes nested commands and literal shell-wrapper scripts. A Bash parse error blocks the action.
 
 ## Examples
