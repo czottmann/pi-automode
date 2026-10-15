@@ -1,3 +1,4 @@
+import { isAbsolute, resolve } from "node:path";
 import {
   analyzeBash,
   type BashAnalysis,
@@ -7,10 +8,10 @@ import {
 import type { ToolPattern } from "./types.ts";
 import {
   expandHomePattern,
+  extractToolPaths,
   normalizePathForMatch,
   resolveInputPath,
   resolvePathForPolicy,
-  resolveToolInputPath,
 } from "./paths.ts";
 
 export const MAX_WILDCARD_PATTERN_LENGTH = 4096;
@@ -195,13 +196,12 @@ export function normalizePermissionPathForMatch(
   return platform === "win32" ? path.replace(/\\/g, "/") : path;
 }
 
+/** Match an extracted target directly; host aliases were expanded at extraction. */
 function pathArgumentsForMatch(
-  toolName: string,
+  resolved: string,
   cwd: string,
-  value: string,
   overflowPolicy: WildcardOverflowPolicy,
 ): string[] {
-  const resolved = resolveToolInputPath(toolName, cwd, value) ?? value;
   const canonical = resolvePathForPolicy(resolved);
   const candidates = canonical
     ? [canonical, normalizePathForMatch(canonical, cwd)]
@@ -217,26 +217,12 @@ function pathArgumentsForMatch(
 function getPrimaryArguments(
   toolName: string,
   input: Record<string, unknown>,
-  cwd: string,
-  overflowPolicy: WildcardOverflowPolicy,
 ): string[] {
   if (toolName === "bash" && typeof input.command === "string") {
     return [input.command];
   }
-  if (
-    (toolName === "read" || toolName === "write" || toolName === "edit") &&
-    typeof input.path === "string"
-  ) {
-    return pathArgumentsForMatch(toolName, cwd, input.path, overflowPolicy);
-  }
   if (toolName === "grep" && typeof input.pattern === "string") {
     return [input.pattern];
-  }
-  if (
-    (toolName === "find" || toolName === "ls") &&
-    typeof input.path === "string"
-  ) {
-    return pathArgumentsForMatch(toolName, cwd, input.path, overflowPolicy);
   }
   return [JSON.stringify(input)];
 }
@@ -269,7 +255,7 @@ function permissionPathPatternVariants(
   const wildcardIndex = expanded.indexOf("*");
   if (wildcardIndex === -1) {
     const resolved = resolveInputPath(cwd, expanded);
-    const canonical = resolved ? resolvePathForPolicy(resolved) : undefined;
+    const canonical = resolvePathForPolicy(isAbsolute(expanded) ? expanded : resolve(cwd, expanded));
     return [...new Set(
       [expanded, resolved, canonical]
         .filter((value): value is string => !!value)
@@ -283,7 +269,7 @@ function permissionPathPatternVariants(
   const fixedScope = fixedPrefix.slice(0, lastSlash) || "/";
   const resolvedScope = resolveInputPath(cwd, fixedScope);
   if (!resolvedScope) return [expanded];
-  const canonicalScope = resolvePathForPolicy(resolvedScope);
+  const canonicalScope = resolvePathForPolicy(isAbsolute(fixedScope) ? fixedScope : resolve(cwd, fixedScope));
   const suffix = expanded.slice(lastSlash).replace(/^\/+/, "");
   return [...new Set([
     expanded,
@@ -292,6 +278,26 @@ function permissionPathPatternVariants(
       ? [appendPermissionPathPatternSuffix(canonicalScope, suffix)]
       : []),
   ])];
+}
+
+function matchesPermissionPathArguments(
+  pattern: ToolPattern,
+  toolName: string,
+  candidates: string[],
+  cwd: string,
+  overflowPolicy: WildcardOverflowPolicy,
+): boolean {
+  if (!pattern.toolName) return overflowPolicy === "match";
+  if (pattern.toolName !== normalizeToolName(toolName)) return false;
+  // Empty allow candidates mean canonicalization failed, even for a bare rule.
+  if (candidates.length === 0) return false;
+  if (pattern.argumentPattern === undefined) return true;
+  if (pattern.argumentPattern.trim() === "") return overflowPolicy === "match";
+  return permissionPathPatternVariants(pattern.argumentPattern, cwd).some(
+    (argumentPattern) => candidates.some((candidate) =>
+      matchesWildcardPattern(argumentPattern, candidate, overflowPolicy)
+    ),
+  );
 }
 
 /**
@@ -423,6 +429,18 @@ export function matchesToolPattern(
 ): boolean {
   if (!pattern.toolName) return overflowPolicy === "match";
   if (pattern.toolName !== normalizeToolName(toolName)) return false;
+  if (isPermissionPathTool(toolName)) {
+    const targets = extractToolPaths(toolName, input, cwd);
+    if (targets.error || targets.paths.length === 0) return overflowPolicy === "match";
+    const quantifier = overflowPolicy === "match" ? "some" : "every";
+    return targets.paths[quantifier]((path) => matchesPermissionPathArguments(
+      pattern,
+      toolName,
+      pathArgumentsForMatch(path, cwd, overflowPolicy),
+      cwd,
+      overflowPolicy,
+    ));
+  }
   if (pattern.argumentPattern === undefined) return true;
   if (pattern.argumentPattern.trim() === "") {
     return overflowPolicy === "match";
@@ -443,19 +461,9 @@ export function matchesToolPattern(
       matchesBashArgumentPattern(argumentPattern, candidate, overflowPolicy)
     );
   }
-  const argumentPatterns = isPermissionPathTool(toolName)
-    ? permissionPathPatternVariants(pattern.argumentPattern, cwd)
-    : [pattern.argumentPattern];
-  const primaryArguments = getPrimaryArguments(
-    toolName,
-    input,
-    cwd,
-    overflowPolicy,
-  );
-  return argumentPatterns.some((argumentPattern) =>
-    primaryArguments.some((primary) =>
-      matchesWildcardPattern(argumentPattern, primary, overflowPolicy)
-    )
+  const primaryArguments = getPrimaryArguments(toolName, input);
+  return primaryArguments.some((primary) =>
+    matchesWildcardPattern(pattern.argumentPattern ?? "", primary, overflowPolicy)
   );
 }
 
@@ -643,6 +651,16 @@ export function matchesAllowedToolPatterns(
   cwd: string,
   bashAnalysis?: BashAnalysis,
 ): boolean {
+  if (isPermissionPathTool(toolName)) {
+    const targets = extractToolPaths(toolName, input, cwd);
+    return !targets.error && targets.paths.length > 0 &&
+      targets.paths.every((path) => {
+        const candidates = pathArgumentsForMatch(path, cwd, "no-match");
+        return candidates.length > 0 && patterns.some((pattern) =>
+          matchesPermissionPathArguments(pattern, toolName, candidates, cwd, "no-match")
+        );
+      });
+  }
   if (toolName !== "bash" || !bashAnalysis) {
     return patterns.some((pattern) =>
       matchesToolPattern(pattern, toolName, input, cwd, "no-match")

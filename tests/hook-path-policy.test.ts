@@ -323,7 +323,6 @@ test("deniedPaths checks the fallback path variants used by Pi read", async (t) 
 			input: { path: item.input },
 		}, harness.ctx) as { block?: boolean; reason?: string };
 		assert.equal(result.block, true);
-		assert.match(result.reason ?? "", /Path denied by policy/);
 	}
 	assert.equal(harness.classifierCalls, 0);
 });
@@ -807,14 +806,14 @@ test("dangling in-tree symlink to a nonexistent outside target still goes to the
 	}
 });
 
-test("writes through symlink loops still go to the classifier", async () => {
+test("writes through unresolved symlink loops fail closed before classification", async () => {
 	const project = mkdtempSync(join(os.tmpdir(), "pi-automode-project-"));
 	try {
 		symlinkSync("loop-b", join(project, "loop-a"));
 		symlinkSync("loop-a", join(project, "loop-b"));
 		const harness = await setupHookTest({
 			ctx: createFakeCtx([], { cwd: project }),
-			classifier: async () => ({ decision: "block", tier: "soft_deny", reason: "unresolved loop" }),
+			classifier: async () => ({ decision: "allow", tier: "none", reason: "must not authorize an unresolved target" }),
 		});
 
 		const result = await harness.emit("tool_call", {
@@ -823,8 +822,7 @@ test("writes through symlink loops still go to the classifier", async () => {
 		}, harness.ctx) as { block?: boolean; reason?: string };
 
 		assert.equal(result.block, true);
-		assert.match(result.reason ?? "", /unresolved loop/);
-		assert.equal(harness.classifierCalls, 1);
+		assert.equal(harness.classifierCalls, 0);
 	} finally {
 		rmSync(project, { recursive: true, force: true });
 	}

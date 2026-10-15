@@ -1,9 +1,9 @@
 import {
   accessSync,
   constants,
+  existsSync,
   lstatSync,
   readlinkSync,
-  realpathSync,
 } from "node:fs";
 import {
   basename,
@@ -13,9 +13,12 @@ import {
   normalize,
   relative,
   resolve,
+  parse,
+  sep,
 } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HOME, PATH_BEARING_TOOLS, PROFILE_FILES } from "./constants.ts";
+import { extractEditPaths } from "./edit-targets.ts";
 
 const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
 
@@ -102,18 +105,234 @@ export function resolveToolInputPath(
   return existingReadVariant(resolved);
 }
 
-/** The effective target path of a file tool, including Pi's `.` defaults. */
-export function extractInputPath(
+export interface ToolPathExtraction {
+  paths: string[];
+  error?: string;
+}
+
+// OMP's execution-time expansion differs from Pi for @, : and ~name.
+// Keep that behavior local to OMP payloads; Pi scalar paths retain their rules.
+function resolveOmpPath(cwd: string, value: string): string | undefined {
+  let path = value
+    .replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, " ")
+    .replace(/\u202F(?=[AP]M)/g, " ");
+  if (path.startsWith("@") && /^@(?:~[/\\]|[/\\]|[A-Za-z]:\\)/.test(path)) {
+    path = path.slice(1);
+  }
+  if (/^:(?=[/\\~]|\.\.?[/\\]|[A-Za-z]:)/.test(path)) path = path.slice(1);
+  if (!path || /[\u0000\r\n]/.test(path) || /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(path)) {
+    return undefined;
+  }
+  if (process.platform === "win32") {
+    if (/^\\\\[?.]\\/.test(path)) return undefined;
+    path = path.replace(/^\/([a-zA-Z])(?:\/|$)/, "$1:/");
+  }
+  if (path.startsWith("~")) path = join(HOME, path.startsWith("~/") ? path.slice(2) : path.slice(1));
+  return isAbsolute(path) ? path : resolve(cwd, path);
+}
+
+/** Native WriteTool and resolvePlanPath each recover one complete header. */
+function nativeWritePath(path: string): string {
+  for (let stage = 0; stage < 2; stage++) {
+    const candidate = path.trimEnd();
+    if (!candidate.startsWith("[") || !candidate.endsWith("]") || /[\r\n]/.test(candidate)) break;
+    const inner = candidate.slice(1, -1);
+    const hash = inner.lastIndexOf("#");
+    const target = hash >= 0 && /^[0-9a-fA-F]{4}$/.test(inner.slice(hash + 1))
+      ? inner.slice(0, hash) : inner;
+    if (!target || target.startsWith("/") && target.endsWith("/") && target.length > 1) break;
+    path = target;
+  }
+  return path;
+}
+
+/** OMP normalizes these spellings to the session-local URL before filesystem lookup. */
+function isNativeLocalAlias(path: string): boolean {
+  return /^local:\/(?!\/)/i.test(path) ||
+    (!/^(?![A-Za-z]:[/\\])[A-Za-z][A-Za-z0-9+.-]*:/.test(path) &&
+      /[/\\]local:\/{1,2}(?=[^/]|$)/i.test(path));
+}
+
+/**
+ * Literal files win over native read lists and selectors. Support only targets
+ * we can enumerate; fail closed on parser-specific grouping or fuzzy recovery.
+ */
+function nativeReadPaths(value: string, cwd: string, strict: boolean): ToolPathExtraction {
+  let entry = value;
+  if (strict && isNativeLocalAlias(entry)) {
+    return { paths: [], error: "Native local URL aliases cannot be enforced as filesystem paths" };
+  }
+  if (strict && entry.includes(";") && /["'{}\\]/.test(entry)) {
+    return { paths: [], error: "Ambiguous native semicolon-list normalization" };
+  }
+  if (strict && entry.includes("?")) {
+    return { paths: [], error: "OMP read query routing cannot be inspected safely" };
+  }
+  const range = /^(?:\d+(?:-\d*|\+\d+)?|-\d+)(?:,(?:\d+(?:-\d*|\+\d+)?|-\d+))*$/;
+  function atom(item: string): string | undefined {
+    const full = resolveOmpPath(cwd, item);
+    const colon = item.lastIndexOf(":");
+    const suffix = item.slice(colon + 1);
+    const hasSelector = colon > 0 &&
+      (range.test(suffix) || /^(?:raw|conflicts|img)$/i.test(suffix));
+    if (full && existsSync(full)) {
+      // Non-line archive/database/binary members may dispatch to an earlier
+      // file prefix. Without that handler's target discovery, fail closed.
+      if (strict && !hasSelector) {
+        for (let index = item.indexOf(":"); index >= 0; index = item.indexOf(":", index + 1)) {
+          const prefix = resolveOmpPath(cwd, item.slice(0, index));
+          if (prefix && existsSync(prefix) && !lstatSync(prefix).isDirectory()) return undefined;
+        }
+      }
+      return full;
+    }
+    if (!hasSelector) return undefined;
+    let basePath = item.slice(0, colon);
+    const innerColon = basePath.lastIndexOf(":");
+    const inner = basePath.slice(innerColon + 1);
+    if (innerColon > 0 && ((/^raw$/i.test(suffix) && range.test(inner)) ||
+      (range.test(suffix) && /^raw$/i.test(inner)))) basePath = basePath.slice(0, innerColon);
+    // Compound handlers dispatch before ordinary selector/file handling.
+    for (let index = basePath.indexOf(":"); index >= 0; index = basePath.indexOf(":", index + 1)) {
+      const prefix = resolveOmpPath(cwd, basePath.slice(0, index));
+      if (strict && prefix && existsSync(prefix) && !lstatSync(prefix).isDirectory()) return undefined;
+    }
+    const base = resolveOmpPath(cwd, basePath);
+    return base && existsSync(base) ? base : undefined;
+  }
+  if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(entry)) {
+    return strict ? { paths: [], error: "Opaque OMP read target cannot be enforced" } : { paths: [] };
+  }
+  const literal = atom(entry);
+  if (literal) return { paths: [literal] };
+  if (/[,;\s]/.test(entry)) {
+    if (strict && !entry.includes(";")) {
+      return { paths: [], error: "Native comma/whitespace reads require unsupported suffix discovery" };
+    }
+    entry = entry.trim();
+    if (entry.startsWith('"') && entry.endsWith('"')) entry = entry.slice(1, -1);
+    if (strict && atom(entry)) {
+      return { paths: [], error: "Normalized read spelling requires ambiguous native recovery" };
+    }
+    if (/["'{}\\]/.test(entry)) {
+      return strict ? { paths: [], error: "Ambiguous OMP read path list" } : { paths: [] };
+    }
+    for (const delimiter of [/;/, /,/, /\s+/, /[,;\s]+/]) {
+      const parts = entry.split(delimiter).map((part) => part.trim()).filter(Boolean);
+      if (parts.length < 2) continue;
+      const targets = parts.map(atom);
+      if (targets.every((target) => target !== undefined)) return { paths: targets as string[] };
+      if (strict) {
+        return { paths: [], error: "Cannot resolve every OMP read path-list target" };
+      }
+    }
+    return strict
+      ? { paths: [], error: "Cannot resolve every OMP read path-list target" }
+      : { paths: [] };
+  }
+  return strict
+    ? { paths: [], error: "OMP read target requires unsupported glob, suffix or case recovery" }
+    : { paths: [] };
+}
+
+/** Complete effective targets, or an error before any edit can be allowed. */
+export function extractToolPaths(
   toolName: string,
   input: Record<string, unknown>,
-): string | undefined {
-  if (!PATH_BEARING_TOOLS.has(toolName)) return undefined;
-  const value = input.path;
-  if (typeof value === "string" && value !== "") return value;
-  if (toolName === "grep" || toolName === "find" || toolName === "ls") {
-    return ".";
+  cwd: string,
+  options: { nativeRead?: boolean; nativeWrite?: boolean } = {},
+): ToolPathExtraction {
+  if (!PATH_BEARING_TOOLS.has(toolName)) return { paths: [] };
+  if (toolName === "edit") {
+    const extracted = extractEditPaths(input);
+    if (extracted.error) return { paths: [], error: extracted.error };
+    const paths: string[] = [];
+    for (const target of extracted.paths) {
+      const path = extracted.format === "omp"
+        ? resolveOmpPath(cwd, target)
+        : resolveToolInputPath(toolName, cwd, target);
+      if (!path) return { paths: [], error: "Edit target cannot be resolved safely" };
+      paths.push(path);
+      if (extracted.format === "pi") {
+        // Scalar Pi and OMP schemas overlap. Cover both host expansions rather
+        // than inferring the host from untrusted arguments.
+        const ompPath = resolveOmpPath(cwd, target);
+        if (ompPath) paths.push(ompPath);
+      }
+    }
+    if (extracted.format === "omp" && input.path !== undefined) {
+      const hint = typeof input.path === "string"
+        ? resolveOmpPath(cwd, input.path)
+        : undefined;
+      if (!hint || !paths.includes(hint)) {
+        return { paths: [], error: "Edit compatibility path conflicts with payload targets" };
+      }
+    }
+    if (extracted.format === "omp" && input.paths !== undefined) {
+      if (
+        !Array.isArray(input.paths) || input.paths.length === 0 ||
+        input.paths.some((value) => {
+          const hint = typeof value === "string" ? resolveOmpPath(cwd, value) : undefined;
+          return !hint || !paths.includes(hint);
+        })
+      ) {
+        return { paths: [], error: "Edit compatibility paths conflict with payload targets" };
+      }
+    }
+    if (paths.some((path) => !resolvePathForPolicy(path))) {
+      return { paths: [], error: "Cannot canonicalize every edit target" };
+    }
+    return { paths: [...new Set(paths)] };
   }
-  return typeof value === "string" ? value : undefined;
+  const values = Array.isArray(input.paths)
+    ? [...(input.path === undefined ? [] : [input.path]), ...input.paths]
+    : [input.path === undefined || input.path === ""
+      ? toolName === "grep" || toolName === "find" || toolName === "ls"
+        ? "."
+        : input.path
+      : input.path];
+  if (values.length === 0 || values.some((value) => typeof value !== "string" || !value)) {
+    return { paths: [], error: "Missing or invalid filesystem target" };
+  }
+  const paths: string[] = [];
+  for (const value of values as string[]) {
+    const path = resolveToolInputPath(toolName, cwd, value);
+    const nativeWrite = toolName === "write" ? nativeWritePath(value) : value;
+    if (toolName === "write" && options.nativeWrite) {
+      if (isNativeLocalAlias(nativeWrite)) {
+        return { paths: [], error: "Native local URL aliases cannot be enforced as filesystem paths" };
+      }
+      for (let colon = nativeWrite.indexOf(":"); colon >= 0; colon = nativeWrite.indexOf(":", colon + 1)) {
+        if (process.platform === "win32" && colon === 1 && /^[A-Za-z]:/.test(nativeWrite)) continue;
+        const prefix = resolveOmpPath(cwd, nativeWrite.slice(0, colon));
+        if (prefix && existsSync(prefix) && !lstatSync(prefix).isDirectory()) {
+          return { paths: [], error: "Native compound write targets cannot be enumerated safely" };
+        }
+      }
+    }
+    const ompPath = resolveOmpPath(cwd, nativeWrite);
+    if (!ompPath && !(path && /^file:\/\//.test(value) && !options.nativeRead && !options.nativeWrite)) {
+      return { paths: [], error: "Opaque or invalid filesystem target" };
+    }
+    if (!options.nativeRead && path) paths.push(path);
+    if (toolName === "read") {
+      let native: ToolPathExtraction;
+      try {
+        native = nativeReadPaths(value, cwd, options.nativeRead === true);
+      } catch {
+        return { paths: [], error: "Cannot inspect every native read target" };
+      }
+      if (native.error) return native;
+      paths.push(...native.paths);
+      if (!options.nativeRead && native.paths.length === 0 && ompPath) paths.push(ompPath);
+    } else {
+      if (ompPath) paths.push(ompPath);
+    }
+  }
+  if (paths.some((path) => !resolvePathForPolicy(path))) {
+    return { paths: [], error: "Cannot canonicalize every filesystem target" };
+  }
+  return { paths: [...new Set(paths)] };
 }
 
 /** Expand a leading `~`, `$HOME`, or `${HOME}` in a path-denial pattern. */
@@ -139,45 +358,39 @@ export function isInside(child: string, parent: string): boolean {
   return rel === "" || (!!rel && !rel.startsWith("..") && !isAbsolute(rel));
 }
 
-/** Resolve symlinks through the nearest existing ancestor of a path. */
+/** Canonicalize symlinks before "..", including missing and dangling targets. */
 export function resolvePathForPolicy(path: string): string | undefined {
-  return resolvePathForPolicyInner(resolve(path), new Set<string>());
-}
-
-function resolvePathForPolicyInner(
-  path: string,
-  visitedSymlinks: Set<string>,
-): string | undefined {
-  let current = path;
-  const missingSegments: string[] = [];
-
-  while (true) {
-    try {
-      return resolve(realpathSync(current), ...missingSegments);
-    } catch {
+  function canonicalize(input: string, links: number): string | undefined {
+    if (links > 40) return undefined;
+    const root = parse(input).root;
+    let current = root;
+    for (const component of input.slice(root.length).split(sep)) {
+      if (!component || component === ".") continue;
+      if (component === "..") {
+        current = dirname(current);
+        continue;
+      }
+      const candidate = join(current, component);
       try {
-        const stat = lstatSync(current);
-        if (!stat.isSymbolicLink() || visitedSymlinks.has(current)) {
-          return undefined;
+        if (lstatSync(candidate).isSymbolicLink()) {
+          const destination = readlinkSync(candidate);
+          const target = canonicalize(
+            isAbsolute(destination) ? destination : `${current}${sep}${destination}`,
+            links + 1,
+          );
+          if (!target) return undefined;
+          current = target;
+        } else {
+          current = candidate;
         }
-        visitedSymlinks.add(current);
-        const target = resolve(dirname(current), readlinkSync(current));
-        return resolvePathForPolicyInner(
-          resolve(target, ...missingSegments),
-          visitedSymlinks,
-        );
       } catch (error) {
-        const code = error && typeof error === "object" && "code" in error
-          ? String(error.code)
-          : undefined;
-        if (code !== "ENOENT" && code !== "ENOTDIR") return undefined;
-        const parent = dirname(current);
-        if (parent === current) return undefined;
-        missingSegments.unshift(basename(current));
-        current = parent;
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") return undefined;
+        current = candidate;
       }
     }
+    return current;
   }
+  return canonicalize(isAbsolute(path) ? path : resolve(path), 0);
 }
 
 function normalizeProtectedPathForMatch(value: string): string {
@@ -205,68 +418,76 @@ export function isProtectedPath(
   cwd: string,
   protectedPaths: string[],
 ): boolean {
-  // Resolve through the nearest existing ancestor so symlinked directories are
-  // respected even when the final write target does not exist yet.
-  const resolved = resolvePathForPolicy(path) ?? path;
   const resolvedCwd = resolvePathForPolicy(cwd) ?? cwd;
-
-  // For paths inside the project: use relative path for matching.
-  if (isInside(resolved, resolvedCwd)) {
-    return matchesProtectedPath(
-      relative(resolvedCwd, resolved),
-      protectedPaths,
-    );
-  }
-
-  // For paths outside the project: check every path component suffix.
-  // This catches writes like ../other-project/.git/config even when cwd
-  // doesn't contain the target.
-  const normalizedResolved = resolved.replace(/\\/g, "/");
-  const segments = normalizedResolved.split("/").filter(Boolean);
-  for (let i = 0; i < segments.length; i++) {
-    if (matchesProtectedPath(segments.slice(i).join("/"), protectedPaths)) {
-      return true;
+  const candidates = [resolve(path), resolvePathForPolicy(path) ?? path];
+  return candidates.some((candidate) => {
+    if (isInside(candidate, resolvedCwd)) {
+      return matchesProtectedPath(relative(resolvedCwd, candidate), protectedPaths);
     }
-  }
-  return false;
+    // Outside the project, match every component suffix, including .git.
+    const segments = candidate.replace(/\\/g, "/").split("/").filter(Boolean);
+    for (let i = 0; i < segments.length; i++) {
+      if (matchesProtectedPath(segments.slice(i).join("/"), protectedPaths)) return true;
+    }
+    return false;
+  });
 }
 
-export function isSafetyControlPath(path: string, cwd: string): boolean {
+export function isSafetyControlPath(path: string, cwd: string, nativeAgentDir?: string): boolean {
   const policyPath = resolvePathForPolicy(path) ?? resolve(path);
   const policyCwd = resolvePathForPolicy(cwd) ?? resolve(cwd);
-  const normalized = normalizeProtectedPathForMatch(policyPath);
-  const file = basename(normalized);
-  const piAgentRoot = normalizeProtectedPathForMatch(
-    resolve(HOME, ".pi/agent"),
-  );
-  const globalExtensions = `${piAgentRoot}/extensions`;
-  const globalSettings = `${piAgentRoot}/settings`;
-  if (
-    normalized === `${piAgentRoot}/settings.json` ||
-    normalized === globalExtensions ||
-    normalized.startsWith(`${globalExtensions}/`) ||
-    normalized === globalSettings ||
-    normalized.startsWith(`${globalSettings}/`)
-  ) {
-    return true;
-  }
-  if (
-    normalized.endsWith("/.pi/auto-mode.json") ||
-    normalized.endsWith("/auto-mode.json")
-  ) {
-    return true;
-  }
-  if (normalized.includes("/.pi/extensions/") && file.includes("auto")) {
-    return true;
-  }
-  if (normalized.includes("/.pi/") && file.startsWith("automode")) return true;
-  if (
-    normalized.includes("/pi-automode/") ||
-    (isInside(policyPath, policyCwd) && file.includes("auto-mode"))
-  ) {
-    return true;
-  }
-  return false;
+  // A symlink must not hide either a control-path spelling or its target.
+  return [resolve(path), policyPath].some((candidate) => {
+    const normalized = normalizeProtectedPathForMatch(candidate);
+    const file = basename(normalized);
+    const agentRoots = [
+      resolve(HOME, ".pi", "agent"),
+      resolve(HOME, ".omp", "agent"),
+      resolve(HOME, process.env.PI_CONFIG_DIR?.trim() || ".omp", "agent"),
+      join(HOME, process.env.PI_CONFIG_DIR || ".omp", "agent"),
+    ];
+    const configuredRoot = resolveInputPath(cwd, process.env.PI_CODING_AGENT_DIR);
+    if (configuredRoot) agentRoots.push(configuredRoot);
+    if (process.env.PI_CODING_AGENT_DIR) agentRoots.push(resolve(process.env.PI_CODING_AGENT_DIR));
+    if (nativeAgentDir) agentRoots.push(nativeAgentDir);
+    // Deny canonical aliases too, including default roots and project controls.
+    agentRoots.push(...agentRoots.map((root) => resolvePathForPolicy(root) ?? root));
+    for (const directory of agentRoots) {
+      const root = normalizeProtectedPathForMatch(directory);
+      if (
+        normalized === `${root}/settings.json` ||
+        normalized === `${root}/config.yml` ||
+        normalized === `${root}/config.yaml` ||
+        normalized === `${root}/extensions` ||
+        normalized.startsWith(`${root}/extensions/`) ||
+        normalized === `${root}/settings` ||
+        normalized.startsWith(`${root}/settings/`)
+      ) return true;
+    }
+    const projectRoots = [resolve(cwd, ".omp"), join(cwd, process.env.PI_CONFIG_DIR || ".omp")];
+    for (const root of [...projectRoots, ...projectRoots.map((root) => resolvePathForPolicy(root))]) {
+      if (!root) continue;
+      const projectRoot = normalizeProtectedPathForMatch(root);
+      if (
+        normalized === `${projectRoot}/settings.json` ||
+        normalized === `${projectRoot}/config.yml` ||
+        normalized === `${projectRoot}/config.yaml` ||
+        normalized === `${projectRoot}/extensions` ||
+        normalized.startsWith(`${projectRoot}/extensions/`)
+      ) return true;
+    }
+    if (
+      normalized.endsWith("/auto-mode.json") ||
+      /\/\.omp\/(?:settings\.json|config\.ya?ml)$/.test(normalized) ||
+      normalized.endsWith("/.omp/extensions") ||
+      normalized.includes("/.omp/extensions/") ||
+      (normalized.includes("/.pi/extensions/") && file.includes("auto")) ||
+      ((normalized.includes("/.pi/") || normalized.includes("/.omp/")) && file.startsWith("automode")) ||
+      normalized.includes("/pi-automode/") ||
+      (isInside(candidate, policyCwd) && file.includes("auto-mode"))
+    ) return true;
+    return false;
+  });
 }
 
 export function shellPathTokenToPath(

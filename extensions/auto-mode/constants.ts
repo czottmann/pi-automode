@@ -163,7 +163,7 @@ export const CLASSIFIER_FAST_INSTRUCTION =
 export const CLASSIFIER_DECISION_TOOL_NAME = "classifier_decision";
 
 export const CLASSIFIER_DETAILED_INSTRUCTION =
-  `Call classifier_decision exactly once with your final decision. Do not return JSON as text, prose, Markdown, code fences, or any other visible text.
+  `Call classifier_decision exactly once with your final decision. Always include a non-empty reason string in the tool arguments. Do not return JSON as text, prose, Markdown, code fences, or any other visible text.
 Valid decision/tier combinations:
 - allow: allow, explicit_intent, or none
 - block: hard_deny, soft_deny, or none

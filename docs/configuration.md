@@ -42,17 +42,23 @@ If a request stalls or exceeds its budget, pi-automode aborts it. Then auto mode
 
 `allowInsideWorkingDirectory` adds a deterministic allow tier for the file tools. The default value is `false`. The file tools are `read`, `write`, `edit`, `grep`, `find`, and `ls`.
 
-The value `allowInsideWorkingDirectory: true` allows access to paths inside the working directory without classifier review. Pi-automode sends access to outside paths to the classifier. This rule also applies to read calls.
+The value `allowInsideWorkingDirectory: true` allows access without classifier review only when every effective target is inside the working directory, both lexically and after symlink resolution. For an OMP edit this includes all source files and rename destinations. An outside target sends the whole call to the classifier. This rule also applies to read calls.
 
 This tier takes precedence over `classifyReadOnlyTools`. If both configuration fields are enabled, pi-automode still allows in-tree file access locally. `classifyReadOnlyTools: true` does not change this behavior.
 
-Protected in-tree targets do not use this allow tier. Writes and edits to `.git/hooks`, `.pi` controls, shell profiles, and configuration files still reach the classifier.
+Protected in-tree targets do not use this allow tier. A protected target such as `.git/hooks` sends the whole write/edit to the classifier. Shell profiles and Pi/OMP safety-control configuration are hard-denied instead, even when another target is safe or a permission allow rule matches.
 
 `deniedPaths` is a list of path glob patterns. The default list is `[]`. A matching pattern blocks a file-tool call before classifier review or an allow tier.
 
 Patterns support `~`, `$HOME`, and `${HOME}` expansion. The `*` wildcard matches all characters, including `/`. Thus, `**/id_rsa` matches a private key at any depth.
 
 Each pattern can contain at most 4,096 UTF-16 code units. Pi-automode matches the typed path and its symlink-resolved form. It also resolves the fixed path prefix of each pattern. Thus, a symlink alias cannot bypass a denied target.
+
+For OMP edits, a match on any source or rename destination blocks the entire call before execution. Compatibility `path`/`paths` metadata cannot replace payload-derived targets. Incomplete, conflicting, opaque, or unsupported edit payloads fail closed; native parser recovery syntax and non-hashline freeform edit modes are not supported. Scalar schemas shared by Pi and OMP cover both hosts' path expansions conservatively.
+
+OMP's native two-stage bracket-wrapped `write` paths are unwrapped for policy checks. Local-URL aliases and compound resource addresses fail closed rather than being authorized as literal decoy paths. Canonicalization resolves each symlink before consuming `..`, including a new file beneath a symlinked directory. Safety-control checks use the active session's trusted settings root and cover default, `PI_CONFIG_DIR`, and `PI_CODING_AGENT_DIR` roots, including canonical aliases.
+
+For OMP `read`, the raw existing literal path wins over delimiter or line-selector interpretation. Unambiguous semicolon lists are accepted only when every effective entry resolves. Comma/whitespace recovery, local-URL aliases, opaque URLs, query routing, unsupported resource members, globs, fuzzy suffix/case recovery and ambiguous lists fail closed before any allow tier or classifier. A missing list entry is not permission to inspect only the existing entries. Pi scalar read fallback behavior is unchanged.
 
 If a recursive `grep` or `find` scope can contain a denied path, pi-automode blocks the call. A broad pattern such as `*.env` blocks these tools for every directory scope.
 
@@ -169,6 +175,8 @@ A pattern can contain at most 4,096 UTF-16 code units. Bash analysis accepts at 
 For other allow matching, an input can contain at most 1,048,576 UTF-16 code units. A longer input returns no match. Deny and ask patterns match the same oversized input so that they fail closed.
 
 `write` and `edit` calls whose resolved target is a protected path are never covered by `permissions.allow`. This includes protected targets reached through symlink aliases.
+
+For scoped `read`, `write`, `edit`, `find`, and `ls` permissions, deny and ask match any effective target. Allow rules may jointly cover the call, but every target must have canonical coverage; one permitted sibling never permits another. Resolved targets are not expanded a second time as raw aliases.
 
 See [Permission recipes](permission-recipes.md) for narrow examples of Bash permissions, directory changes, command chains, redirects, and classifier guidance.
 

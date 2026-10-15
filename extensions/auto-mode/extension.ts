@@ -1,6 +1,7 @@
 import { realpathSync, statSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
@@ -48,11 +49,10 @@ import {
   recursiveSearchMayReachDeniedPath,
 } from "./permissions.ts";
 import {
-  extractInputPath,
+  extractToolPaths,
   isInside,
   isProtectedPath,
   resolvePathForPolicy,
-  resolveToolInputPath,
 } from "./paths.ts";
 import {
   actionSummary,
@@ -502,6 +502,79 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
       }
       if (!isOwnedInspection) state.checkedActions += 1;
 
+      // OMP injects its SDK through the trusted extension API. Model arguments
+      // are never used to select host semantics. Pi has no injected SDK.
+      const ompSdk = (pi as ExtensionAPI & {
+        pi?: {
+          createAgentSession?: unknown;
+          getAgentDir?: () => string;
+          Settings?: new (...args: never[]) => {
+            getAgentDir: () => string;
+            getCwd: () => string;
+          };
+        };
+      }).pi;
+      const nativeHost = typeof ompSdk?.createAgentSession === "function";
+      const fileTargets = extractToolPaths(event.toolName, input, ctx.cwd, {
+        nativeRead: event.toolName === "read" && nativeHost,
+        nativeWrite: event.toolName === "write" && nativeHost,
+      });
+      let nativeAgentDir: string | undefined;
+      let globalAgentDir: string | undefined;
+      if (event.toolName === "write" || event.toolName === "edit" || event.toolName === "bash") {
+        try {
+          if (typeof ompSdk?.getAgentDir === "function") {
+            const root = ompSdk.getAgentDir();
+            if (typeof root !== "string" || !isAbsolute(root) || root.includes("\0")) {
+              throw new Error("Invalid host root");
+            }
+            globalAgentDir = resolve(root);
+          }
+          if (nativeHost) {
+            // Native loader remaps this import to the plain-object legacy shim.
+            // Its create(ctx.cwd) resolves the runner's AsyncLocalStorage Settings,
+            // not the process-global pi.pi.settings or a same-cwd sibling session.
+            // Reject upstream Pi's class BEFORE create() can read unrelated files.
+            const managerFactory: unknown = SettingsManager;
+            if (
+              typeof managerFactory !== "object" || managerFactory === null ||
+              !("create" in managerFactory) || typeof managerFactory.create !== "function" ||
+              typeof ompSdk?.Settings !== "function"
+            ) throw new Error("Native session settings are unavailable");
+            const manager = managerFactory.create(ctx.cwd);
+            if (
+              !(manager instanceof ompSdk.Settings) ||
+              typeof manager.getAgentDir !== "function" ||
+              typeof manager.getCwd !== "function"
+            ) throw new Error("Unrelated session settings");
+            const settingsCwd = manager.getCwd();
+            if (typeof settingsCwd !== "string" || settingsCwd.includes("\0") || resolve(settingsCwd) !== resolve(ctx.cwd)) {
+              throw new Error("Session settings scope does not match");
+            }
+            const root = manager.getAgentDir();
+            if (typeof root !== "string" || !isAbsolute(root) || root.includes("\0")) {
+              throw new Error("Invalid session root");
+            }
+            nativeAgentDir = resolve(root);
+          }
+        } catch {
+          return block(ctx, {
+            timestamp: Date.now(), toolName: event.toolName,
+            reason: "OMP safety-control root could not be inspected safely",
+            action: summary, kind: "deterministic-hard-deny",
+          }, logCtx);
+        }
+      }
+      if (fileTargets.error) {
+        return block(ctx, {
+          timestamp: Date.now(),
+          toolName: event.toolName,
+          reason: `Filesystem targets could not be inspected safely: ${fileTargets.error}`,
+          action: summary,
+          kind: "deterministic-hard-deny",
+        }, logCtx);
+      }
+
       for (const pattern of cfg.permissionDeny) {
         if (
           matchesToolPattern(
@@ -587,6 +660,11 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
         input,
         ctx.cwd,
         bashAnalysis,
+        nativeAgentDir ?? globalAgentDir,
+      ) ?? (
+        nativeAgentDir && globalAgentDir && globalAgentDir !== nativeAgentDir
+          ? deterministicHardDeny(event.toolName, input, ctx.cwd, bashAnalysis, globalAgentDir)
+          : undefined
       );
       if (deterministicReason) {
         if (isOwnedInspection) state.checkedActions += 1;
@@ -618,15 +696,12 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
         !askRequiresClassifier &&
         !cfg.classifyReadOnlyTools &&
         READ_ONLY_TOOLS.has(event.toolName);
+      const filePaths = fileTargets.paths;
       if (
         (cfg.deniedPaths.length > 0 || cfg.allowInsideWorkingDirectory) &&
         PATH_BEARING_TOOLS.has(event.toolName)
       ) {
-        const inputPath = extractInputPath(event.toolName, input);
-        if (inputPath !== undefined) {
-          const resolved =
-            resolveToolInputPath(event.toolName, ctx.cwd, inputPath) ??
-            inputPath;
+        for (const resolved of filePaths) {
           const policyPath = resolvePathForPolicy(resolved) ?? resolved;
           const denied =
             cfg.deniedPaths.length > 0 &&
@@ -647,19 +722,15 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
             try {
               recursiveSearch = statSync(policyPath).isDirectory();
             } catch {
-              // A missing search root will fail in the tool. Treat it as a
-              // directory here so a denied scope cannot fail open in a race.
+              // A missing search root cannot establish a safe search scope.
             }
           }
-          const deniedSearchScope =
+          if (
             recursiveSearch &&
             cfg.deniedPaths.length > 0 &&
             (recursiveSearchMayReachDeniedPath(resolved, cfg.deniedPaths) ||
-              recursiveSearchMayReachDeniedPath(
-                policyPath,
-                cfg.deniedPaths,
-              ));
-          if (deniedSearchScope) {
+              recursiveSearchMayReachDeniedPath(policyPath, cfg.deniedPaths))
+          ) {
             return block(ctx, {
               timestamp: Date.now(),
               toolName: event.toolName,
@@ -668,29 +739,27 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
               kind: "deterministic-path-deny",
             }, logCtx);
           }
-          if (cfg.allowInsideWorkingDirectory) {
-            const policyCwd = resolvePathForPolicy(ctx.cwd) ?? ctx.cwd;
-            if (isInside(policyPath, policyCwd)) {
-              // Protected in-tree writes and accepted ask rules must still
-              // reach the classifier. They cannot use the inside-CWD tier.
-              const protectedWrite =
-                (event.toolName === "write" || event.toolName === "edit") &&
-                isProtectedPath(policyPath, policyCwd, cfg.protectedPaths);
-              if (!askRequiresClassifier && !protectedWrite) {
-                return allow(
-                  ctx,
-                  "inside-working-directory",
-                  `Path inside working directory: ${policyPath}`,
-                  event.toolName,
-                  summary,
-                  logCtx,
-                );
-              }
-            }
-            // Outside the working directory, protected writes, and accepted
-            // ask rules must not use the read-only fast path.
-            readOnlyFastPath = false;
+        }
+        if (cfg.allowInsideWorkingDirectory && filePaths.length > 0) {
+          const policyCwd = resolvePathForPolicy(ctx.cwd) ?? ctx.cwd;
+          const allInside = filePaths.every((path) =>
+            isInside(path, ctx.cwd) &&
+            isInside(resolvePathForPolicy(path) ?? path, policyCwd)
+          );
+          const protectedWrite =
+            (event.toolName === "write" || event.toolName === "edit") &&
+            filePaths.some((path) => isProtectedPath(path, ctx.cwd, cfg.protectedPaths));
+          if (!askRequiresClassifier && allInside && !protectedWrite) {
+            return allow(
+              ctx,
+              "inside-working-directory",
+              `All paths inside working directory: ${filePaths.join(", ")}`,
+              event.toolName,
+              summary,
+              logCtx,
+            );
           }
+          readOnlyFastPath = false;
         }
       }
 
@@ -708,20 +777,9 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
         ) {
           // A protected-path write/edit is never covered by permissions.allow;
           // it stays on the classifier path (same rule as the inside-CWD tier).
-          let protectedWrite = false;
-          if (event.toolName === "write" || event.toolName === "edit") {
-            const inputPath = extractInputPath(event.toolName, input);
-            const resolved = inputPath === undefined
-              ? undefined
-              : resolveToolInputPath(event.toolName, ctx.cwd, inputPath) ??
-                inputPath;
-            if (
-              resolved !== undefined &&
-              isProtectedPath(resolved, ctx.cwd, cfg.protectedPaths)
-            ) {
-              protectedWrite = true;
-            }
-          }
+          const protectedWrite =
+            (event.toolName === "write" || event.toolName === "edit") &&
+            filePaths.some((path) => isProtectedPath(path, ctx.cwd, cfg.protectedPaths));
           if (!protectedWrite) {
             return allow(
               ctx,

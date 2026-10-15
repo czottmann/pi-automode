@@ -9,6 +9,7 @@ import {
 } from "./bash.ts";
 import { HOME } from "./constants.ts";
 import {
+  extractToolPaths,
   isProfileOrAuthorizedKeysPath,
   isSafetyControlPath,
   resolveInputPath,
@@ -231,13 +232,14 @@ export function isRootHomeOrSystemPath(
 function segmentHardDeny(
   segment: BashCommandAnalysis,
   cwd: string,
+  nativeAgentDir?: string,
 ): string | undefined {
   for (const target of segment.redirectTargets) {
     const path = shellPathTokenToPath(target, cwd);
     if (!path) continue;
     const profileReason = isProfileOrAuthorizedKeysPath(path);
     if (profileReason) return profileReason;
-    if (isSafetyControlPath(path, cwd)) {
+    if (isSafetyControlPath(path, cwd, nativeAgentDir)) {
       return "auto-mode or permission safety-control modification is hard-denied";
     }
   }
@@ -375,7 +377,7 @@ function segmentHardDeny(
       "sd",
       "sed",
     ].includes(name) &&
-    /\.pi\/automode|\.pi\/extensions|pi-automode|auto-mode\.json/i.test(
+    /\.pi\/automode|\.pi\/extensions|\.omp\/(?:automode|extensions|settings|config\.ya?ml|agent\/(?:extensions|settings|config\.ya?ml))|pi-automode|auto-mode\.json/i.test(
       segment.raw,
     )
   ) {
@@ -396,16 +398,19 @@ export function deterministicHardDeny(
   input: Record<string, unknown>,
   cwd: string,
   bashAnalysis?: BashAnalysis,
+  nativeAgentDir?: string,
 ): string | undefined {
   if (toolName === "write" || toolName === "edit") {
-    const path = resolveInputPath(cwd, input.path);
-    if (!path) return undefined;
-    const policyPath = resolvePathForPolicy(path) ?? path;
-    const policyCwd = resolvePathForPolicy(cwd) ?? cwd;
-    const profileReason = isProfileOrAuthorizedKeysPath(policyPath);
-    if (profileReason) return profileReason;
-    if (isSafetyControlPath(policyPath, policyCwd)) {
-      return "auto-mode or permission safety-control modification is hard-denied";
+    const targets = extractToolPaths(toolName, input, cwd);
+    if (targets.error) return `Edit targets could not be inspected safely: ${targets.error}`;
+    for (const path of targets.paths) {
+      const policyPath = resolvePathForPolicy(path) ?? path;
+      const profileReason = isProfileOrAuthorizedKeysPath(path) ??
+        isProfileOrAuthorizedKeysPath(policyPath);
+      if (profileReason) return profileReason;
+      if (isSafetyControlPath(path, cwd, nativeAgentDir)) {
+        return "auto-mode or permission safety-control modification is hard-denied";
+      }
     }
   }
 
@@ -420,12 +425,12 @@ export function deterministicHardDeny(
     if (!path) continue;
     const profileReason = isProfileOrAuthorizedKeysPath(path);
     if (profileReason) return profileReason;
-    if (isSafetyControlPath(path, cwd)) {
+    if (isSafetyControlPath(path, cwd, nativeAgentDir)) {
       return "auto-mode or permission safety-control modification is hard-denied";
     }
   }
   for (const segment of analysis.commands) {
-    const reason = segmentHardDeny(segment, cwd);
+    const reason = segmentHardDeny(segment, cwd, nativeAgentDir);
     if (reason) return reason;
   }
   return undefined;

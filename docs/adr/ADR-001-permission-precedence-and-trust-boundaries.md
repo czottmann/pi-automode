@@ -35,6 +35,10 @@ Shared `.pi/automode.json` can add deny and ask rules after project trust. It ca
 
 For an oversized matcher input, deny and ask rules return a match. Allow rules return no match. This behavior keeps denial rules fail-closed without broadening allow rules.
 
+Filesystem target discovery is a prerequisite to permission matching: incomplete or unsafe discovery blocks the call. For OMP multi-file edits, bracket-wrapped writes and delimited reads, deny and ask rules match any effective target. Permission allow coverage is required for every target, and no protected source or rename destination can use an allow tier. Canonicalization resolves symlinks before parent traversal. Pi scalar path and read fallback behavior remains supported; native OMP recovery that cannot be enumerated safely is blocked.
+
+User authorization excludes OMP agent-attributed and synthetic prompts. A delegated task is model-authored work, not a new human decision. Metadata-free Pi user messages retain their existing behavior.
+
 ## Consequences
 
 A repository cannot use checked-in configuration to remove classifier review. Users can still add project-specific allow rules in the local configuration file.

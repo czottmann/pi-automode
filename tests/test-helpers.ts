@@ -175,6 +175,11 @@ export function baseState(overrides: Partial<AutoModeState> = {}): AutoModeState
 	};
 }
 
+export interface ToolCallHarness {
+	emit(event: string, payload: unknown, ctx: unknown): Promise<unknown>;
+	ctx: unknown;
+}
+
 export async function setupHookTest(options: {
 	config?: EffectiveConfig;
 	classifier?: () => Promise<ClassificationDecision>;

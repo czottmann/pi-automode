@@ -12,6 +12,14 @@ Pi-automode does not guard user `!` or `!!` shell commands. It guards only agent
 
 Pi-automode supports Pi and Oh My Pi (OMP) 18. It automatically uses OMP's legacy completion API. The integration needs no OMP-specific configuration.
 
+OMP edits are checked from their complete payload, including every file and rename destination. Supported payloads are hashline edits and structured patch/replacement edits; malformed or unsupported forms fail closed rather than falling back to a compatibility `path`. Pi scalar edits retain their interface. The OMP compatibility target for this hardening is 18.8.7.
+
+Filesystem enforcement also covers native two-stage bracket-wrapped writes, literal-colon filenames, symlink/`..` traversal, and unambiguous delimited reads. Deny/ask rules inspect every effective target; allow coverage must include all targets. OMP local-URL aliases, compound write addresses, and reads that need opaque routing, query/resource-member dispatch, globs, fuzzy suffix/case recovery, or ambiguous list parsing are blocked before classification. Existing literal files take precedence over lists and supported line selectors. Pi's prepared edit arrays and read fallbacks remain supported.
+
+OMP child extensions inherit the guards, but delegated agent prompts and synthetic user messages are not user authorization. A child without genuine user evidence cannot use its assignment as consent for a soft-denied action.
+
+Isolated SDK smoke verification on OMP 18.8.7 exercised real parent, task-child, and eval-child execution with a scripted provider transport under both default and alternate `PI_CONFIG_DIR` roots. Each context blocked 29 denied or ambiguous calls before execution and completed nine native allowed controls; denied files and archives remained byte-identical and denied read content was never returned. Native Pi 0.86.0 smoke verification exercised nine prepared/scalar edit paths. Separate provenance checks confirmed child assignments did not become user authorization. These are not live-model tests.
+
 ## Install
 
 From npm:
@@ -142,6 +150,10 @@ Pi-automode parses Bash structure with `unbash` before permission and determinis
 ## Known limits
 
 Claude Code's real classifier and exact built-in rules are private. This package implements the documented precedence and configuration behavior, with a local classifier prompt and deterministic hard-deny checks.
+
+- The host, UI, and loaded extensions must be trusted. OMP extensions can rewrite arguments after a guard checks them; native approval is not a substitute for a loaded, enabled automode extension.
+- Path checks are not a filesystem sandbox for Bash, eval, or arbitrary custom tools, and pre-execution symlink resolution cannot prevent a later filesystem race.
+- OMP built-in `ask` results are still excluded from authorization evidence. Authenticated Ask integration (#76) is separate from the edit-path hardening.
 
 ## Development
 

@@ -24,6 +24,8 @@ For each Pi `tool_call` event, the extension does this:
 
 The default posture is fail-closed. If model resolution, authentication, a classifier call, or response parsing fails, pi-automode blocks the action.
 
+Before permission matching, filesystem calls must expose a complete, safely resolvable target set. Discovery errors block immediately; OMP's trusted injected SDK enables strict native read checks, rather than model-supplied arguments selecting host behavior. Native recovery or resource routing that cannot be enumerated is not delegated to the classifier.
+
 ## Diagram
 
 ```mermaid
@@ -44,20 +46,20 @@ flowchart TD
   I -- accepted --> J[Require classifier review]
   G -- no --> J0[Continue normally]
 
-  J --> K{Deterministic hard-deny?}
+  J --> K{Hard-deny or unsafe edit targets?}
   J0 --> K
   K -- yes --> K1[Block locally]
   K -- no --> E{Extension-owned automode_inspect?}
   E -- yes --> E2{Classifier required by ask?}
   E2 -- no --> E1[Allow without state or log changes]
   E2 -- yes --> N[Run one-token filter]
-  E -- no --> K2{Path denied or recursive scope unsafe?}
+  E -- no --> K2{Any path denied or recursive scope unsafe?}
 
   K2 -- yes --> K1
   K2 -- no --> K3{Classifier required by ask?}
   K3 -- yes --> N
-  K3 -- no --> K4{Inside-CWD allow tier?}
-  K4 -- yes, non-protected --> L1[Allow locally]
+  K3 -- no --> K4{All paths inside-CWD?}
+  K4 -- yes, none protected --> L1[Allow locally]
   K4 -- no or protected --> K5{Matches permissions.allow?}
   K5 -- yes, non-protected --> L1
   K5 -- no or protected --> L{Read-only built-in fast path?}
@@ -311,10 +313,10 @@ If a stage request cannot fit in the classifier model's context window, auto mod
 
 Pi-automode builds the transcript from active Pi context entries. It includes only:
 
-- user text
+- genuine user text (Pi messages without attribution metadata remain eligible)
 - assistant tool-call names and payloads
 
-Pi-automode excludes assistant prose, hidden reasoning, and tool results. User evidence and tool-call evidence have separate approximate-token budgets. Both budgets default to 4000.
+Pi-automode excludes assistant prose, hidden reasoning, tool results, and OMP agent-attributed or synthetic user messages. Explicit attribution other than `user` is not authorization. User evidence and tool-call evidence have separate approximate-token budgets. Both budgets default to 4000.
 
 The selector keeps the first and latest user messages. It fills the remaining budget from the newest eligible entries. It renders retained evidence in chronological order. It also marks omitted or truncated evidence.
 

@@ -6,6 +6,9 @@ All notable changes to this project are documented in this file.
 
 ## Bug fixes
 
+- **OMP filesystem target enforcement** — Inspect every hashline or structured edit source and rename destination, two-stage bracket-wrapped writes, and unambiguous read targets. Preserve literal-colon filenames and resolve symlinks before `..`. Reject local-URL aliases, compound resource addresses, ambiguous native recovery, and incomplete or conflicting discovery before permission tiers; deny/ask any target and require all-target allow coverage. Preserve Pi prepared/scalar edits and read fallbacks. (#63)
+- **OMP safety controls** — Hard-deny OMP settings and extension-control writes using the trusted active session root, including alternate `PI_CONFIG_DIR`, configured agent roots, path aliases, and canonical aliases of default or project control directories.
+- **OMP authorization provenance** — Exclude delegated agent-attributed and synthetic user messages from classifier authorization evidence. Built-in Ask authorization remains unchanged and separate.
 - **System-wide delete checks** — Block recursive deletion of `/Users` and its subdirectories. Check the search root after `find -H`, `-L`, or `-P` before `-delete`.
 - **Codex classifier shutdown** — Codex classifier requests no longer keep session WebSockets. This lets `pi -p` exit after classification. These requests no longer reuse the prompt cache. (#60)
 

@@ -96,8 +96,19 @@ function collectTranscriptEntries(ctx: ExtensionContext): TranscriptEntry[] {
 
   for (const [index, entry] of contextEntries.entries()) {
     if (entry.type !== "message") continue;
-    const message = entry.message as { role?: string; content?: unknown };
+    const message = entry.message as {
+      role?: string;
+      content?: unknown;
+      attribution?: unknown;
+      synthetic?: unknown;
+    };
     if (message.role === "user") {
+      // OMP uses "user" | "agent" attribution. Missing metadata remains valid
+      // for Pi, but explicit non-user attribution cannot authorize an action.
+      if (
+        message.synthetic === true ||
+        (message.attribution !== undefined && message.attribution !== "user")
+      ) continue;
       const text = flattenUserContent(message.content).trim();
       if (text) entries.push({ index, order: 0, kind: "user", text });
       continue;
@@ -196,7 +207,7 @@ function selectToolEntries(
   };
 }
 
-/** Build classifier evidence from user text and assistant tool-call payloads only. */
+/** Build classifier evidence from genuine user text and assistant tool-call payloads only. */
 export function buildClassifierTranscript(
   ctx: ExtensionContext,
   budgets: ClassifierTranscriptBudgets,

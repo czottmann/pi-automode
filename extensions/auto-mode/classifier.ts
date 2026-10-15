@@ -130,6 +130,8 @@ export type ClassifierCompletionFn = (
     reasoning?: Exclude<EffectiveClassifierReasoningLevel, "off">;
     sessionId?: string;
     cacheRetention?: "none" | "short" | "long";
+    externalToolExecutor?: boolean;
+    cursorExternalToolExecutor?: boolean;
   },
 ) => Promise<AssistantMessage>;
 
@@ -282,8 +284,19 @@ async function completeClassifierAttempt(
 ): Promise<AssistantMessage> {
   // Codex caches WebSockets by session ID. Pi cleans up its own session ID,
   // but not the classifier's separate cache ID, so retain no classifier socket.
+  // Cursor's AgentService treats sessionId as a persistent stateful conversationId
+  // and requires external tool handoff to return client-declared MCP tool calls.
+  const isCursorAgent = model.api === "cursor-agent";
+  const cursorToolHandoff = isCursorAgent && Boolean(prompt.tools?.length);
   const requestOptions = withSessionHeaders(model, {
     ...options,
+    ...(isCursorAgent ? { sessionId: undefined } : {}),
+    ...(cursorToolHandoff
+      ? {
+        externalToolExecutor: true,
+        cursorExternalToolExecutor: true,
+      }
+      : {}),
     cacheRetention: model.api === "openai-codex-responses"
       ? "none"
       : options.cacheRetention,
@@ -363,7 +376,8 @@ const CLASSIFIER_TIERS = [
 
 export const CLASSIFIER_DECISION_TOOL: Tool = {
   name: CLASSIFIER_DECISION_TOOL_NAME,
-  description: "Return the final auto-mode classifier decision.",
+  description:
+    "Return the final auto-mode classifier decision with required arguments: decision, tier, and reason (non-empty string).",
   parameters: Type.Object(
     {
       decision: StringEnum(CLASSIFIER_DECISIONS),
@@ -510,10 +524,16 @@ function extractAssistantText(message: AssistantMessage, trim = true): string {
 /** Parse one exact detailed-stage decision tool call; any shape drift fails closed. */
 export function parseClassifierDecision(
   message: AssistantMessage,
+  options?: { allowNarrationText?: boolean },
 ): ClassificationDecision | undefined {
   const toolCalls = message.content.filter((block) => block.type === "toolCall");
   if (toolCalls.length !== 1) return undefined;
-  if (message.content.some((block) => block.type === "text" && block.text.trim() !== "")) {
+  const allowNarrationText =
+    options?.allowNarrationText === true && message.api === "cursor-agent";
+  if (
+    !allowNarrationText &&
+    message.content.some((block) => block.type === "text" && block.text.trim() !== "")
+  ) {
     return undefined;
   }
 
@@ -680,9 +700,16 @@ export async function classifyWithRetry(
     }
     const durationMs = Date.now() - started;
     const failure = classifierFailure(response, "Classifier", true, true);
-    const decision = response.stopReason === "toolUse"
-      ? parseClassifierDecision(response)
-      : undefined;
+    const isMatchedCursorAgent =
+      classifier.model.api === "cursor-agent" &&
+      response.api === "cursor-agent";
+    const decision =
+      response.stopReason === "toolUse" ||
+        (isMatchedCursorAgent && response.stopReason === "stop")
+        ? parseClassifierDecision(response, {
+          allowNarrationText: isMatchedCursorAgent,
+        })
+        : undefined;
     onAttempt?.(
       responseAttempt(stage, attempt + 1, response, durationMs, decision, false),
     );
