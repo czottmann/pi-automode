@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [1.18.0] - 2026-11-11
+
 ## Bug fixes
 
 - **System-wide delete checks** — Block recursive deletion of `/Users` and its subdirectories. Check the search root after `find -H`, `-L`, or `-P` before `-delete`.
@@ -87,7 +89,8 @@ All notable changes to this project are documented in this file.
 - **Project config trust gate** — Ignore `.pi/automode.local.json` and `.pi/automode.json` until Pi trusts the project. Apply the trust gate during startup and config reloads. (#16)
 - **In-memory observability logs** — Write logs to an extension-owned directory (`~/.pi/agent/extensions/pi-automode/logs/`) instead of the launching project directory. Thanks, @HerbertGao! (#13)
 
-[Unreleased]: https://github.com/czottmann/pi-automode/compare/v1.17.0...HEAD
+[Unreleased]: https://github.com/czottmann/pi-automode/compare/v1.18.0...HEAD
+[1.18.0]: https://github.com/czottmann/pi-automode/compare/v1.17.0...v1.18.0
 [1.17.0]: https://github.com/czottmann/pi-automode/compare/v1.16.0...v1.17.0
 [1.16.0]: https://github.com/czottmann/pi-automode/compare/v1.15.0...v1.16.0
 [1.15.0]: https://github.com/czottmann/pi-automode/compare/v1.14.0...v1.15.0
