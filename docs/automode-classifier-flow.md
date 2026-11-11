@@ -309,12 +309,14 @@ Pi-automode checks the fast request before the fast-stage call. A fast result of
 
 If a stage request cannot fit in the classifier model's context window, auto mode blocks the call. It does not truncate the action.
 
-Pi-automode builds the transcript from active Pi context entries. It includes only:
+Pi-automode builds the transcript from active context entries. By default it includes only:
 
 - user text
 - assistant tool-call names and payloads
 
-Pi-automode excludes assistant prose, hidden reasoning, and tool results. User evidence and tool-call evidence have separate approximate-token budgets. Both budgets default to 4000.
+Pi-automode always excludes assistant prose and hidden reasoning. User evidence and tool-call evidence have separate approximate-token budgets. Both budgets default to 4000.
+
+With `includeToolResults: true`, the transcript also includes selected text results paired with earlier calls. Results have a separate `maxToolResultTranscriptTokens` budget (default 2000). They remain untrusted evidence. See [Include tool results](configuration.md#include-tool-results).
 
 The selector keeps the first and latest user messages. It fills the remaining budget from the newest eligible entries. It renders retained evidence in chronological order. It also marks omitted or truncated evidence.
 

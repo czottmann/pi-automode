@@ -151,6 +151,8 @@ export function baseConfig(overrides: Partial<EffectiveConfig> = {}): EffectiveC
 		classifierTimeoutMs: 20_000,
 		maxUserTranscriptTokens: 4000,
 		maxToolTranscriptTokens: 4000,
+		includeToolResults: false,
+		maxToolResultTranscriptTokens: 2000,
 		environment: [],
 		allow: [],
 		protectedPaths: [...DEFAULT_PROTECTED_PATHS],

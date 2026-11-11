@@ -145,7 +145,7 @@ The array records both stages, retries, and fail-closed cases. A fast allow has 
 
 ## Privacy
 
-`prompt.context` contains project instructions and transcript evidence for both classifier stages. `prompt.action` contains the separate, untruncated current action. Pi-automode logs the final stage instructions separately.
+`prompt.context` contains project instructions and transcript evidence for both classifier stages. This includes tool results when `includeToolResults` is enabled. `prompt.action` contains the separate, untruncated current action. Pi-automode logs the final stage instructions separately.
 
 See [Auto-mode classifier flow → What is sent to the classifier](automode-classifier-flow.md#what-is-sent-to-the-classifier) for the evidence assembly rules.
 
@@ -160,4 +160,6 @@ If `classifierModel` uses a cloud provider, the payload leaves the machine. Enab
 
 `autoMode.maxUserTranscriptTokens` and `autoMode.maxToolTranscriptTokens` limit transcript evidence separately. Both fields default to approximately 4000 tokens.
 
-Pi-automode excludes assistant prose and tool results. Provider cache hits can reduce processed or billed input. The log still records the full classifier payload.
+Tool results use `autoMode.maxToolResultTranscriptTokens`, which defaults to approximately 2000 tokens.
+
+Pi-automode excludes assistant prose and excludes tool results by default. Provider cache hits can reduce processed or billed input. The log still records the full classifier payload.

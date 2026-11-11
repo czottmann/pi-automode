@@ -1,5 +1,7 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { safeJson, truncateMiddle } from "./utils.ts";
+import { selectOutcomeEntries } from "./outcomes.ts";
+import { snapshotContextEntries } from "./context.ts";
 
 const MAX_USER_ENTRY_TOKENS = 1000;
 const MAX_TOOL_ENTRY_TOKENS = 1000;
@@ -16,6 +18,9 @@ type TranscriptEntry = {
 export type ClassifierTranscriptBudgets = {
   maxUserTokens: number;
   maxToolTokens: number;
+  includeToolResults?: boolean;
+  includeToolResultsFrom?: string[];
+  maxToolResultTranscriptTokens?: number;
 };
 
 function flattenUserContent(content: unknown): string {
@@ -86,14 +91,10 @@ function truncateToTokenCap(
   };
 }
 
-function collectTranscriptEntries(ctx: ExtensionContext): TranscriptEntry[] {
+function collectTranscriptEntries(
+  contextEntries: ReturnType<typeof snapshotContextEntries>["entries"],
+): TranscriptEntry[] {
   const entries: TranscriptEntry[] = [];
-  const sessionManager = ctx.sessionManager as typeof ctx.sessionManager & {
-    buildContextEntries?: () => ReturnType<typeof ctx.sessionManager.getBranch>;
-  };
-  const contextEntries = sessionManager.buildContextEntries?.() ??
-    sessionManager.getBranch();
-
   for (const [index, entry] of contextEntries.entries()) {
     if (entry.type !== "message") continue;
     const message = entry.message as { role?: string; content?: unknown };
@@ -196,18 +197,31 @@ function selectToolEntries(
   };
 }
 
-/** Build classifier evidence from user text and assistant tool-call payloads only. */
+/** Build classifier evidence from the retained context. */
 export function buildClassifierTranscript(
   ctx: ExtensionContext,
   budgets: ClassifierTranscriptBudgets,
 ): string {
-  const entries = collectTranscriptEntries(ctx);
+  const snapshot = snapshotContextEntries(ctx, budgets.includeToolResults === true);
+  const contextEntries = snapshot.entries;
+  const entries = collectTranscriptEntries(contextEntries);
   const users = selectUserEntries(entries, budgets.maxUserTokens);
   const tools = selectToolEntries(entries, budgets.maxToolTokens);
-  const selected = [...users.selected, ...tools.selected].sort(
+  const outcomes = budgets.includeToolResults === true && snapshot.supportsOutcomes
+    ? selectOutcomeEntries(
+      contextEntries,
+      budgets.maxToolResultTranscriptTokens ?? 2000,
+      budgets.includeToolResultsFrom,
+    )
+    : { selected: [], omitted: budgets.includeToolResults === true };
+  const selected = [
+    ...users.selected,
+    ...tools.selected,
+    ...outcomes.selected.map(entry => ({ ...entry, kind: "tool" as const })),
+  ].sort(
     (left, right) => left.index - right.index || left.order - right.order,
   );
-  if (users.omitted || tools.omitted) {
+  if (users.omitted || tools.omitted || outcomes.omitted) {
     selected.push({
       index: Number.MAX_SAFE_INTEGER,
       order: 0,

@@ -28,7 +28,7 @@ The classifier policy defines denial tiers and rule-list syntax. See [Defaults a
 
 **soft_deny** — Classifier rules that normally block but support defined overrides. Unlike [hard_deny](#classifier-policy-and-rules), these rules are not unconditional.
 
-**explicit_intent** — A classifier tier for direct user authorization in the retained user transcript. It authorizes an action that matches a [soft_deny](#classifier-policy-and-rules) rule. A later user instruction that narrows or revokes authorization controls. For a pre-existing local file, see [Defaults and rule-list behavior](defaults.md).
+**explicit_intent** — A classifier tier for direct user authorization in classifier evidence. It authorizes an action that matches a [soft_deny](#classifier-policy-and-rules) rule. A later user instruction that narrows or revokes authorization controls. For a pre-existing local file, see [Defaults and rule-list behavior](defaults.md).
 
 **allow exception** (`autoMode.allow`) — A prose rule that overrides a matching [soft_deny](#classifier-policy-and-rules) rule. It cannot override [hard_deny](#classifier-policy-and-rules). It is independent of the [`permissions.allow` tier](#enforcement-flow).
 

@@ -116,14 +116,17 @@ Hard-deny rules cannot be overridden by `allow` or by user intent.
 
 ### Classifier transcript budgets
 
-Classifier evidence has separate approximate-token budgets for user messages and assistant tool-call payloads:
+Classifier evidence has separate approximate-token budgets:
 
 - `maxUserTranscriptTokens`: 4000
 - `maxToolTranscriptTokens`: 4000
+- `maxToolResultTranscriptTokens`: 2000 (requires `includeToolResults: true`)
 
 The selector keeps the first and latest user messages as intent anchors. It fills the remaining space from the newest eligible entries.
 
-The selector limits individual entries. It marks omitted or truncated evidence in the classifier transcript. It excludes assistant prose and tool results.
+The selector limits individual entries. It marks omitted or truncated evidence in the classifier transcript. Assistant prose is excluded. Tool results are excluded by default.
+
+With `includeToolResults: true`, the selector keeps at most 40 results. Each result is limited to 1000 approximate tokens.
 
 These limits use approximate character counts. They do not guarantee the same result as a provider tokenizer.
 

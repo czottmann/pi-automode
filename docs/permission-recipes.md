@@ -159,7 +159,7 @@ If the user must confirm a matching action, use `permissions.ask`:
 
 A confirmation does not create an allow decision. After confirmation, deterministic checks and the classifier still evaluate the call.
 
-If the classifier needs explicit user authorization, send it in a normal chat message. Answers from ask-user tools do not become classifier authorization.
+If the classifier needs explicit user authorization, send it in a normal chat message. To include answers from ask-user tools in classifier evidence, enable [`includeToolResults`](configuration.md#include-tool-results). The classifier still evaluates the action.
 
 ## Deny commands unconditionally
 

@@ -430,6 +430,59 @@ test("default classifier sends OpenCode session headers through raw registry com
 	assert.equal(calls[0]?.options.headers["x-opencode-client"], "pi");
 });
 
+test("default classifier forwards opted-in outcomes to both stages without bypassing review", async () => {
+	const scenarios: Array<{ enabled: boolean; from?: string[]; budget?: number; expected: boolean }> = [
+		{ enabled: false, expected: false },
+		{ enabled: true, expected: true },
+		{ enabled: true, from: ["custom_questionnaire"], expected: true },
+		{ enabled: true, from: ["bash"], expected: false },
+		{ enabled: true, from: [], expected: false },
+		{ enabled: false, from: ["custom_questionnaire"], expected: false },
+		{ enabled: true, from: ["custom_questionnaire"], budget: 32, expected: false },
+	];
+	for (const { enabled, from, budget = 2000, expected } of scenarios) {
+		const entries = [
+			{ type: "message", message: { role: "assistant", content: [{
+				type: "toolCall", id: "question-1", name: "custom_questionnaire",
+				arguments: { question: "Edit file A only?" },
+			}] } },
+			{ type: "message", message: { role: "toolResult", toolCallId: "question-1",
+				toolName: "custom_questionnaire", isError: false,
+				content: [{ type: "text", text: "USER_ANSWER: Yes, only file A" }],
+			} },
+		];
+		const model = {
+			provider: "test", id: "classifier", api: "runtime-only-api",
+			reasoning: false, contextWindow: 128_000, maxTokens: 4096,
+		};
+		const contexts: unknown[] = [];
+		const ctx = createFakeCtx(entries, {
+			model,
+			modelRegistry: {
+				find: () => model,
+				getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key" }),
+				async complete(_model: unknown, context: unknown) {
+					contexts.push(context);
+					return contexts.length === 1 ? assistantWith("1") : assistantWithDecision({
+						decision: "block", tier: "soft_deny", reason: "File B is outside the answered scope",
+					});
+				},
+			},
+		});
+		const result = await defaultClassifyAction(ctx as never,
+			baseConfig({ includeToolResults: enabled, includeToolResultsFrom: from,
+				maxToolResultTranscriptTokens: budget }),
+			'{"toolName":"edit","input":{"path":"B"}}', "");
+		assert.equal(result.decision, "block");
+		assert.equal(contexts.length, 2);
+		for (const context of contexts) {
+			const messages = JSON.stringify((context as { messages: unknown[] }).messages);
+			assert.equal(messages.includes("USER_ANSWER"), expected);
+			assert.equal(messages.includes("ToolResult "), expected);
+		}
+	}
+});
+
 test("Pi 0.86 registry simple completion preserves reasoning and adds OpenCode session headers", async () => {
 	const model = {
 		provider: "opencode",
@@ -997,7 +1050,7 @@ test("classifyInStages aborts a pending detailed stage at the configured deadlin
 	let call = 0;
 	const attempts: ClassifierIoAttempt[] = [];
 	const decision = await classifyInStages(
-		async (_model, _prompt, options) => {
+		async (_model, _prompt) => {
 			call += 1;
 			if (call === 1) return assistantWith("1");
 			return new Promise(() => {});

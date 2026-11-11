@@ -289,6 +289,9 @@ export function validateSettingsFile(
         "deniedPaths",
         "maxUserTranscriptTokens",
         "maxToolTranscriptTokens",
+        "includeToolResults",
+        "includeToolResultsFrom",
+        "maxToolResultTranscriptTokens",
         "environment",
         "allow",
         "protectedPaths",
@@ -359,6 +362,22 @@ export function validateSettingsFile(
           `${source}: autoMode.allowInsideWorkingDirectory must be a boolean`,
         );
       }
+      if (
+        hasOwn(autoMode, "includeToolResults") &&
+        typeof autoMode.includeToolResults !== "boolean"
+      ) {
+        diagnostics.push(
+          `${source}: autoMode.includeToolResults must be a boolean`,
+        );
+      }
+      if (
+        hasOwn(autoMode, "includeToolResultsFrom") &&
+        !validToolResultFilter(autoMode.includeToolResultsFrom)
+      ) {
+        diagnostics.push(
+          `${source}: autoMode.includeToolResultsFrom must be an array of non-empty tool names`,
+        );
+      }
       validateDeniedPathsSetting(
         autoMode.deniedPaths,
         source,
@@ -368,6 +387,7 @@ export function validateSettingsFile(
         const key of [
           "maxUserTranscriptTokens",
           "maxToolTranscriptTokens",
+          "maxToolResultTranscriptTokens",
         ] as const
       ) {
         if (
@@ -595,6 +615,12 @@ function isValidClassifierModel(value: unknown): value is string {
   return typeof value === "string" && parseModelSpec(value) !== undefined;
 }
 
+function validToolResultFilter(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(name =>
+    typeof name === "string" && name.trim().length > 0
+  );
+}
+
 function validTranscriptBudget(value: unknown): value is number {
   return Number.isInteger(value) && Number(value) >= 32;
 }
@@ -650,6 +676,19 @@ function applyAutoModeScalars(
       )
       ? settings.maxToolTranscriptTokens
       : base.maxToolTranscriptTokens,
+    includeToolResults: typeof settings.includeToolResults === "boolean"
+      ? settings.includeToolResults
+      : base.includeToolResults,
+    includeToolResultsFrom: settings.includeToolResultsFrom === undefined
+      ? base.includeToolResultsFrom
+      : validToolResultFilter(settings.includeToolResultsFrom)
+        ? [...settings.includeToolResultsFrom]
+        : [],
+    maxToolResultTranscriptTokens: validTranscriptBudget(
+        settings.maxToolResultTranscriptTokens,
+      )
+      ? settings.maxToolResultTranscriptTokens
+      : base.maxToolResultTranscriptTokens,
     log: mergeLog(base.log, settings.log),
   };
 }
@@ -690,6 +729,8 @@ export function buildEffectiveConfigFromSources(
     classifierTimeoutMs: DEFAULT_CLASSIFIER_TIMEOUT_MS,
     maxUserTranscriptTokens: DEFAULT_MAX_USER_TRANSCRIPT_TOKENS,
     maxToolTranscriptTokens: DEFAULT_MAX_TOOL_TRANSCRIPT_TOKENS,
+    includeToolResults: false,
+    maxToolResultTranscriptTokens: 2000,
     environment: [...DEFAULT_ENVIRONMENT],
     allow: [...DEFAULT_ALLOW],
     protectedPaths: [...DEFAULT_PROTECTED_PATHS],
