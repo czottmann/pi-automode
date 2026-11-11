@@ -8,6 +8,7 @@ All notable changes to this project are documented in this file.
 
 - **System-wide delete checks** — Block recursive deletion of `/Users` and its subdirectories. Check the search root after `find -H`, `-L`, or `-P` before `-delete`.
 - **Codex classifier shutdown** — Codex classifier requests no longer keep session WebSockets. This lets `pi -p` exit after classification. These requests no longer reuse the prompt cache. (#60)
+- **Custom agent directory** — Respect `PI_CODING_AGENT_DIR` for global configuration, migration, in-memory logs, and safety-control path checks. Thanks for the contribution, @Susensio! (#41)
 
 ## [1.17.0] - 2026-09-22
 
