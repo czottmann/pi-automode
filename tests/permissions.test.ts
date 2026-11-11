@@ -356,10 +356,12 @@ test("adversarial wildcard matching completes within a bounded child process", (
 		const value = "a".repeat(300);
 		process.stdout.write(String(matchesWildcardPattern(pattern, value)));
 	`;
+	// The bound accommodates cold-start module import (includes the
+	// peer-dependent pi-coding-agent graph) plus the adversarial match.
 	const result = spawnSync(
 		process.execPath,
 		["--import", "tsx", "--input-type=module", "-e", script],
-		{ cwd: process.cwd(), encoding: "utf8", timeout: 3000 },
+		{ cwd: process.cwd(), encoding: "utf8", timeout: 10_000 },
 	);
 
 	assert.equal(result.error, undefined, result.error?.message);

@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { appendFileSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type {
   ClassifierIo,
   ClassifierIoAttempt,
@@ -69,16 +69,15 @@ export type LoggerOptions = {
   /** Effective cwd for an in-memory session. */
   sessionCwd?: string;
   sessionId: string;
-  /** Test/embedder override. Runtime uses ~/.pi/agent/extensions/pi-automode/logs. */
+  /** Test/embedder override. Runtime uses the effective agent-dir-based log root. */
   logRoot?: string;
   /** Test clock used for the UTC date partition. */
   now?: Date;
 };
 
-export const DEFAULT_AUTOMODE_LOG_ROOT = join(
-  homedir(),
-  ".pi/agent/extensions/pi-automode/logs",
-);
+export function defaultAutomodeLogRoot(): string {
+  return join(getAgentDir(), "extensions/pi-automode/logs");
+}
 
 const VALID_SESSION_ID =
   /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
@@ -109,7 +108,7 @@ export function resolveLogPath(
   sessionDir: string,
   sessionId: string,
   sessionCwd = process.cwd(),
-  logRoot = DEFAULT_AUTOMODE_LOG_ROOT,
+  logRoot?: string,
   now = new Date(),
 ): string {
   if (sessionFile) {
@@ -128,9 +127,9 @@ export function resolveLogPath(
     resolvedCwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")
   }--`;
   const dateDir = now.toISOString().slice(0, 10);
-  const resolvedLogRoot = isAbsolute(logRoot)
+  const resolvedLogRoot = logRoot && isAbsolute(logRoot)
     ? logRoot
-    : DEFAULT_AUTOMODE_LOG_ROOT;
+    : defaultAutomodeLogRoot();
   return join(
     resolvedLogRoot,
     projectDir,

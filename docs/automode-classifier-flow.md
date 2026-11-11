@@ -89,7 +89,7 @@ Pi-automode loads global and inline configuration during extension initializatio
 
 The effective configuration combines these sources:
 
-- `~/.pi/agent/extensions/pi-automode/config.json`
+- The agent directory from Pi (`~/.pi/agent` by default; `PI_CODING_AGENT_DIR` changes it), so: `extensions/pi-automode/config.json` inside the agent directory
 - `.pi/automode.local.json` for trusted projects
 - `PI_AUTOMODE_SETTINGS_JSON`
 - shared `.pi/automode.json` for trusted projects, but only for `permissions.deny` and `permissions.ask`
@@ -327,7 +327,7 @@ Pi-automode selects the classifier model in this order:
 1. `autoMode.classifierModel` from configuration
 2. the current Pi session model.
 
-`/automode model provider/model-id` and the interactive model picker save `autoMode.classifierModel` to `~/.pi/agent/extensions/pi-automode/config.json`. Project-local `.pi/automode.local.json` can still override that global choice.
+`/automode model provider/model-id` and the interactive model picker save `autoMode.classifierModel` to `extensions/pi-automode/config.json` inside the Pi agent directory (`~/.pi/agent` by default; `PI_CODING_AGENT_DIR` changes it). Project-local `.pi/automode.local.json` can still override that global choice.
 
 `autoMode.classifierReasoningLevel` can request `low`, `medium`, `high`, `xhigh`, or `max` reasoning for both stages.
 
@@ -447,4 +447,4 @@ The classifier flow can be inspected or changed through slash commands:
 
 `/auto-mode` is an alias.
 
-`/automode off` disables the whole flow for the current session. `/automode on` re-enables it. `/automode model` saves the classifier model to `~/.pi/agent/extensions/pi-automode/config.json`.
+`/automode off` disables the whole flow for the current session. `/automode on` re-enables it. `/automode model` saves the classifier model to `extensions/pi-automode/config.json` inside the Pi agent directory (`~/.pi/agent` by default; `PI_CODING_AGENT_DIR` changes it).

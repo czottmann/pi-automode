@@ -6,7 +6,7 @@ Logging is off by default. Logging fails open, so a write error never changes an
 
 ## Enabling
 
-Set `autoMode.log` in a Pi-owned configuration source. These sources include `~/.pi/agent/extensions/pi-automode/config.json`, trusted `.pi/automode.local.json`, and `PI_AUTOMODE_SETTINGS_JSON`.
+Set `autoMode.log` in a Pi-owned configuration source. These sources include the agent directory's `extensions/pi-automode/config.json` (`~/.pi/agent` by default; `PI_CODING_AGENT_DIR` changes it), trusted `.pi/automode.local.json`, and `PI_AUTOMODE_SETTINGS_JSON`.
 
 ```json
 {
@@ -37,15 +37,17 @@ Pi-automode stores the log next to the current Pi session file. It inserts `-pi-
 <session-file>-pi-automode.jsonl     →  <dir>/<id>-pi-automode.jsonl
 ```
 
-For example, pi-automode can use `~/.pi/agent/sessions/<slug>/<id>-pi-automode.jsonl`.
+For example, pi-automode can use `~/.pi/agent/sessions/<slug>/<id>-pi-automode.jsonl`, where `~/.pi/agent` is the default agent directory; `PI_CODING_AGENT_DIR` changes it.
 
 If a custom session manager provides an absolute session directory without a session file, pi-automode uses `<sessionDir>/<sessionId>-pi-automode.jsonl`.
 
 Pi in-memory sessions have no session file or session directory. These sessions include `--no-session` and non-persisted subagents. Their logs use this absolute application path:
 
 ```text
-~/.pi/agent/extensions/pi-automode/logs/<encoded-session-cwd>/YYYY-MM-DD/<session-id>-pi-automode.jsonl
+<agent-dir>/extensions/pi-automode/logs/<encoded-session-cwd>/YYYY-MM-DD/<session-id>-pi-automode.jsonl
 ```
+
+`<agent-dir>` is the Pi agent directory, `~/.pi/agent` by default; `PI_CODING_AGENT_DIR` changes it.
 
 The project directory uses the same `--path-with-dashes--` encoding as normal Pi session directories. The date partition uses UTC.
 

@@ -3,6 +3,7 @@ import os from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import {
 	deterministicHardDeny,
 	isRootHomeOrSystemPath,
@@ -22,11 +23,11 @@ test("deterministic hard deny catches safety-control edits", () => {
 });
 
 test("deterministic hard deny protects global Pi extensions and settings", () => {
-	const agentDir = join(os.homedir(), ".pi/agent");
+	const agentDir = getAgentDir();
 	for (const path of [
 		join(agentDir, "extensions/auto-mode.ts"),
 		join(agentDir, "extensions/pi-automode/config.json"),
-		join(os.homedir(), ".PI/AGENT/EXTENSIONS/auto-mode.ts"),
+		join(agentDir.toUpperCase(), "EXTENSIONS/auto-mode.ts"),
 		join(agentDir, "settings.json"),
 		join(agentDir, "settings/providers.json"),
 	]) {
@@ -59,7 +60,7 @@ test("deterministic hard deny resolves symlinks to global Pi extensions", () => 
 	const project = mkdtempSync(join(os.tmpdir(), "pi-automode-global-extension-link-"));
 	try {
 		const link = join(project, "linked-extensions");
-		symlinkSync(join(os.homedir(), ".pi/agent/extensions"), link);
+		symlinkSync(join(getAgentDir(), "extensions"), link);
 		assert.match(
 			deterministicHardDeny(
 				"write",

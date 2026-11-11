@@ -65,8 +65,10 @@ Use the `config` view to get the log path for the current session. Its `logFile`
 For in-memory sessions, pi-automode uses this default location:
 
 ```text
-~/.pi/agent/extensions/pi-automode/logs/<encoded-session-cwd>/YYYY-MM-DD/<session-id>-pi-automode.jsonl
+<agent-dir>/extensions/pi-automode/logs/<encoded-session-cwd>/YYYY-MM-DD/<session-id>-pi-automode.jsonl
 ```
+
+`<agent-dir>` is the Pi agent directory, `~/.pi/agent` by default; `PI_CODING_AGENT_DIR` changes it.
 
 This includes `--no-session` runs and non-persisted subagents. The path does not use the launching process working directory.
 
