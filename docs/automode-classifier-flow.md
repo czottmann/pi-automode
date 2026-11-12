@@ -335,9 +335,9 @@ When the key is absent, classifier calls omit a reasoning preference. The server
 
 Pi AI clamps the request to the nearest supported level. Models without reasoning support resolve to `off`. They remain on the normalized path without a reasoning preference.
 
-Reasoning does not increase the stage token limits. A high level can use all stage tokens before it produces valid visible output. Truncation fails closed.
+Each classifier request sends the stage answer allowance plus the #51 reasoning reserve as `maxTokens`. The fast-stage allowance is 512 tokens. The detailed-stage allowance is 1200 tokens. `low` matches the reasoning effort of Codex Auto Review.
 
-The fast-stage limit is 512 tokens. The detailed-stage limit is 1200 tokens. `low` matches the reasoning effort of Codex Auto Review.
+That value is the context-fit reserve. On a shared-ceiling provider it is one output cap, not a split between reasoning and the answer. On a budget-thinking provider the adapter may add its own thinking budget and then clamp to the context window, so the wire limit can exceed this reserve. At `xhigh` and `max`, a composed ceiling is the model output limit whenever that limit is at most the allowance plus the reserve (33,968 for the detailed stage, 33,280 for the fast stage).
 
 The extension asks Pi's model registry for API credentials. If the model cannot be found or credentials are unavailable, classification returns a blocking decision:
 
@@ -353,9 +353,9 @@ The detailed request does not use provider-specific forced tool selection. Its i
 
 If a request exceeds its budget, pi-automode aborts it and blocks the action. A stalled provider stream has the same result.
 
-The fast stage requires one visible digit and uses `maxTokens: 512`. Reasoning models can use hidden tokens before they emit the digit.
+The fast stage requires one visible digit. Its request uses the 512-token allowance plus the same reserve. Reasoning models can still spend hidden tokens before they emit the digit.
 
-Extra visible content fails fast-stage parsing. Detailed review uses `maxTokens: 1200`. It can retry once after a missing, invalid, or truncated decision tool call.
+Extra visible content fails fast-stage parsing. Detailed review uses the 1200-token allowance plus the same reserve. It can retry once after a missing, invalid, or truncated decision tool call. A length stop retries once at the model output limit or the estimated context room, whichever is smaller, and never below the first ceiling. If the retry ceiling cannot exceed the first ceiling, the retry is skipped and the action fails closed after the first length stop.
 
 ## Parsing the classifier result
 
