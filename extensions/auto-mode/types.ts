@@ -2,6 +2,7 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 export type ClassifierReasoningLevel =
+  | "off"
   | "low"
   | "medium"
   | "high"
@@ -11,7 +12,7 @@ export type ClassifierReasoningLevel =
 export type EffectiveClassifierReasoningLevel =
   | "off"
   | "minimal"
-  | ClassifierReasoningLevel;
+  | Exclude<ClassifierReasoningLevel, "off">;
 
 export type ClassifierReasoning =
   | { mode: "server-default" }

@@ -283,6 +283,36 @@ test("classifier completion plan preserves server default and clamps explicit le
 	});
 });
 
+test("classifier completion plan resolves off for off-capable models and clamps otherwise", () => {
+	const raw = async () => assistantWith("0");
+	const simple = async () => assistantWith("0");
+	const offCapable = {
+		provider: "test",
+		id: "off-capable",
+		reasoning: true,
+		thinkingLevelMap: { off: "none", low: "low", high: "high" },
+	} as any;
+
+	const offPlan = createClassifierCompletionPlan(offCapable, "off", raw as never, simple as never);
+	assert.equal(offPlan.completeFn, simple);
+	assert.deepEqual(offPlan.reasoning, {
+		mode: "explicit",
+		requestedLevel: "off",
+		effectiveLevel: "off",
+	});
+	assert.equal(offPlan.reasoningLevel, undefined);
+
+	const thinkingLocked = {
+		provider: "test",
+		id: "thinking-locked",
+		reasoning: true,
+		thinkingLevelMap: { off: null, low: "low", high: "high" },
+	} as any;
+	const clamped = createClassifierCompletionPlan(thinkingLocked, "off", raw as never, simple as never);
+	assert.equal(clamped.completeFn, simple);
+	assert.equal(clamped.reasoning.effectiveLevel, "minimal");
+});
+
 test("legacy model registries preserve classifier tools through compat completion functions", async () => {
 	const rawCalls: unknown[][] = [];
 	const simpleCalls: unknown[][] = [];
