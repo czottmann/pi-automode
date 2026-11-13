@@ -61,6 +61,7 @@ import {
   restoreState,
   statusLine,
   statusText,
+  sumClassifierAttemptCosts,
 } from "./state.ts";
 import { loadedContextFromSystemPromptOptions } from "./transcript.ts";
 import type {
@@ -224,6 +225,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
       blockedActions: 0,
       classifierAllowed: 0,
       classifierDenied: 0,
+      classifierCost: 0,
       recentDenials: [],
     };
     let loadedContext = "";
@@ -273,6 +275,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
           `blocked actions: ${state.blockedActions}`,
           `classifier allowed: ${state.classifierAllowed}`,
           `classifier denied: ${state.classifierDenied}`,
+          `classifier cost: $${(state.classifierCost ?? 0).toFixed(4)}`,
           `permissions.deny rules: ${cfg.permissionDeny.length}`,
           `permissions.ask rules: ${cfg.permissionAsk.length}`,
           `permissions.allow rules: ${cfg.permissionAllow.length}`,
@@ -292,6 +295,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
             blockedActions: state.blockedActions,
             classifierAllowed: state.classifierAllowed,
             classifierDenied: state.classifierDenied,
+            classifierCost: state.classifierCost ?? 0,
           },
         };
       }
@@ -753,6 +757,8 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
         loadedContext,
       );
       logClassifierIo(decision, logCtx);
+      state.classifierCost = (state.classifierCost ?? 0) +
+        sumClassifierAttemptCosts(decision.io?.attempts);
       if (decision.decision === "allow") {
         state.classifierAllowed += 1;
         return allow(
@@ -846,6 +852,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
           blockedActions: 0,
           classifierAllowed: 0,
           classifierDenied: 0,
+          classifierCost: 0,
           recentDenials: [],
           enabledOverride: state.enabledOverride,
         };

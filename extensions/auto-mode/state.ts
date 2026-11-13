@@ -1,6 +1,11 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { DENIAL_HISTORY_LIMIT } from "./constants.ts";
-import type { AutoModeState, DenialRecord, EffectiveConfig } from "./types.ts";
+import type {
+  AutoModeState,
+  ClassifierIoAttempt,
+  DenialRecord,
+  EffectiveConfig,
+} from "./types.ts";
 import { safeJson, truncateMiddle } from "./utils.ts";
 
 export function pushDenial(state: AutoModeState, denial: DenialRecord): void {
@@ -18,9 +23,20 @@ export function statusLine(
   const circle = enabled ? "●" : "○";
   const allowed = state.checkedActions - state.blockedActions;
   const classifier = state.classifierAllowed > 0 || state.classifierDenied > 0
-    ? ` ca:${state.classifierAllowed} cd:${state.classifierDenied}`
+    ? ` ca:${state.classifierAllowed} cd:${state.classifierDenied} c:$${(state.classifierCost ?? 0).toFixed(4)}`
     : "";
   return `AM ${circle} a:${allowed} d:${state.blockedActions}${classifier}`;
+}
+
+export function sumClassifierAttemptCosts(
+  attempts: readonly ClassifierIoAttempt[] | undefined,
+): number {
+  return attempts?.reduce((total, attempt) => {
+    const cost = attempt.response?.usage.cost.total;
+    return typeof cost === "number" && Number.isFinite(cost) && cost >= 0
+      ? total + cost
+      : total;
+  }, 0) ?? 0;
 }
 
 export function statusText(
@@ -35,6 +51,7 @@ export function statusText(
     `blocked actions: ${state.blockedActions}`,
     `classifier allowed: ${state.classifierAllowed}`,
     `classifier denied: ${state.classifierDenied}`,
+    `classifier cost: $${(state.classifierCost ?? 0).toFixed(4)}`,
     `permissions.deny rules: ${config.permissionDeny.length}`,
     `permissions.ask rules: ${config.permissionAsk.length}`,
     `permissions.allow rules: ${config.permissionAllow.length}`,
@@ -93,10 +110,18 @@ export function restoreState(ctx: ExtensionContext): AutoModeState {
       blockedActions: entry.data.blockedActions ?? 0,
       classifierAllowed: entry.data.classifierAllowed ?? 0,
       classifierDenied: entry.data.classifierDenied ?? 0,
+      classifierCost: entry.data.classifierCost ?? 0,
       recentDenials: Array.isArray(entry.data.recentDenials)
         ? entry.data.recentDenials.slice(-DENIAL_HISTORY_LIMIT)
         : [],
     };
   }
-  return { checkedActions: 0, blockedActions: 0, classifierAllowed: 0, classifierDenied: 0, recentDenials: [] };
+  return {
+    checkedActions: 0,
+    blockedActions: 0,
+    classifierAllowed: 0,
+    classifierDenied: 0,
+    classifierCost: 0,
+    recentDenials: [],
+  };
 }

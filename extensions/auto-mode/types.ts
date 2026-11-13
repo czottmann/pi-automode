@@ -117,6 +117,8 @@ export type AutoModeState = {
   blockedActions: number;
   classifierAllowed: number;
   classifierDenied: number;
+  /** Cumulative classifier usage cost for this session, in USD. */
+  classifierCost?: number;
   recentDenials: DenialRecord[];
 };
 
