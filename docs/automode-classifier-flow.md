@@ -22,7 +22,7 @@ For each Pi `tool_call` event, the extension does this:
 14. If the filter requests review, run structured classifier review.
 15. Persist state and update the UI status and denial history.
 
-The default posture is fail-closed. If model resolution, authentication, a classifier call, or response parsing fails, pi-automode blocks the action.
+The default posture is fail-closed. Invalid output blocks the action after the existing output retries. Infrastructure failures can try explicitly configured fallback models; if all models fail, pi-automode blocks the action.
 
 ## Diagram
 
@@ -66,11 +66,17 @@ flowchart TD
 
   N --> O{Exact safe token?}
   O -- yes --> Q[Allow tool]
-  O -- malformed or error --> O1[Block: fail closed]
+  O -- malformed --> O1[Block: fail closed]
+  O -- infrastructure error --> U{Parent cancelled?}
   O -- review --> P[Request classifier_decision tool call]
   P --> P1{Valid allow decision tool call?}
   P1 -- yes --> Q
-  P1 -- no or error --> R[Block with classifier reason]
+  P1 -- block decision or exhausted output retries --> R[Block with classifier reason]
+  P1 -- infrastructure error --> U
+  U -- yes --> X
+  U -- no --> V{Next configured fallback model?}
+  V -- yes --> N
+  V -- no --> R
 
   X --> S[Persist state and update UI]
   F1 --> S
@@ -322,10 +328,9 @@ Transcript truncation does not change the dedicated current-action message.
 
 ## Classifier model resolution
 
-Pi-automode selects the classifier model in this order:
+Pi-automode uses `autoMode.classifierModel` as the primary model. If that field is absent, it uses the current Pi session model. An unavailable configured primary does not implicitly fall back to the session model.
 
-1. `autoMode.classifierModel` from configuration
-2. the current Pi session model.
+`autoMode.classifierFallbackModels` adds an explicit ordered list after the primary. Each action starts at the primary. Each fallback starts at the fast stage. See [Classifier fallback models](configuration.md#classifier-fallback-models) for configuration precedence and failure conditions.
 
 `/automode model provider/model-id` and the interactive model picker save `autoMode.classifierModel` to `extensions/pi-automode/config.json` inside the Pi agent directory (`~/.pi/agent` by default; `PI_CODING_AGENT_DIR` changes it). Project-local `.pi/automode.local.json` can still override that global choice.
 
@@ -339,7 +344,7 @@ Reasoning does not increase the stage token limits. A high level can use all sta
 
 The fast-stage limit is 512 tokens. The detailed-stage limit is 1200 tokens. `low` matches the reasoning effort of Codex Auto Review.
 
-The extension asks Pi's model registry for API credentials. If the model cannot be found or credentials are unavailable, classification returns a blocking decision:
+The extension asks Pi's model registry for API credentials. If the model cannot be found or credentials are unavailable, it tries the next configured fallback. If no fallback remains, classification returns a blocking decision:
 
 ```text
 No classifier model/API key available; auto mode fails closed.
@@ -351,7 +356,7 @@ The detailed request does not use provider-specific forced tool selection. Its i
 
 `autoMode.classifierTimeoutMs` limits each fast-stage and detailed-stage request. The default is 20000 ms.
 
-If a request exceeds its budget, pi-automode aborts it and blocks the action. A stalled provider stream has the same result.
+If a request exceeds its budget, pi-automode aborts it and tries the next configured fallback. With no fallback left, it blocks the action. The timeout applies to each request, not the complete chain. User cancellation stops classification without fallback.
 
 The fast stage requires one visible digit and uses `maxTokens: 512`. Reasoning models can use hidden tokens before they emit the digit.
 
@@ -361,7 +366,7 @@ Extra visible content fails fast-stage parsing. Detailed review uses `maxTokens:
 
 The fast-stage parser requires `stopReason: "stop"`. It removes surrounding whitespace and accepts only `0` or `1`.
 
-Empty responses, additional content, malformed output, and non-stop responses block immediately. Observability logs preserve the untrimmed model response.
+Empty responses, additional content, malformed output, and non-stop responses block immediately, except that provider error or aborted responses can trigger infrastructure fallback. Observability logs preserve the untrimmed model response.
 
 The detailed parser requires `stopReason: "toolUse"` and exactly one `classifier_decision` call. The response must not contain non-empty visible text.
 
@@ -371,7 +376,7 @@ The parser also checks the decision and tier combination. It rejects extra field
 
 A response with `stopReason: "length"` can cause one retry. A missing or invalid decision tool call also can cause one retry.
 
-A truncated or invalid response cannot authorize an action. Error and aborted responses block immediately.
+A truncated or invalid response cannot authorize an action. Error and provider-aborted responses trigger infrastructure fallback when configured. Parent cancellation stops classification.
 
 If detailed parsing fails after its retry, pi-automode blocks the action with this reason:
 
@@ -379,7 +384,7 @@ If detailed parsing fails after its retry, pi-automode blocks the action with th
 Classifier response did not contain a valid classifier decision tool call; auto mode fails closed.
 ```
 
-If the model call throws, pi-automode blocks the action immediately. It uses a classifier failure message.
+If the model call throws, pi-automode tries the next configured fallback without retrying the failed model. With no fallback left, it blocks the action with a classifier failure message.
 
 ## Agent behavior after a blocked tool call
 

@@ -281,6 +281,7 @@ export function validateSettingsFile(
       const knownAutoMode = new Set([
         "enabled",
         "classifierModel",
+        "classifierFallbackModels",
         "classifierReasoningLevel",
         "classifierTimeoutMs",
         "classifyReadOnlyTools",
@@ -307,6 +308,14 @@ export function validateSettingsFile(
         hasOwn(autoMode, "enabled") && typeof autoMode.enabled !== "boolean"
       ) {
         diagnostics.push(`${source}: autoMode.enabled must be a boolean`);
+      }
+      if (
+        hasOwn(autoMode, "classifierFallbackModels") &&
+        !isValidClassifierFallbackModels(autoMode.classifierFallbackModels)
+      ) {
+        diagnostics.push(
+          `${source}: autoMode.classifierFallbackModels must be an array of provider/model strings`,
+        );
       }
       if (
         hasOwn(autoMode, "classifierModel") &&
@@ -595,6 +604,10 @@ function isValidClassifierModel(value: unknown): value is string {
   return typeof value === "string" && parseModelSpec(value) !== undefined;
 }
 
+function isValidClassifierFallbackModels(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(isValidClassifierModel);
+}
+
 function validTranscriptBudget(value: unknown): value is number {
   return Number.isInteger(value) && Number(value) >= 32;
 }
@@ -620,6 +633,9 @@ function applyAutoModeScalars(
     classifierModel: isValidClassifierModel(settings.classifierModel)
       ? settings.classifierModel
       : base.classifierModel,
+    classifierFallbackModels: isValidClassifierFallbackModels(settings.classifierFallbackModels)
+      ? [...settings.classifierFallbackModels]
+      : base.classifierFallbackModels,
     classifierReasoningLevel: isClassifierReasoningLevel(
         settings.classifierReasoningLevel,
       )
@@ -683,6 +699,7 @@ export function buildEffectiveConfigFromSources(
 ): EffectiveConfig {
   let config: EffectiveConfig = {
     enabled: true,
+    classifierFallbackModels: [],
     classifyReadOnlyTools: DEFAULT_CLASSIFY_READ_ONLY_TOOLS,
     allowInsideWorkingDirectory: DEFAULT_ALLOW_INSIDE_WORKING_DIRECTORY,
     deniedPaths: [...DEFAULT_DENIED_PATHS],

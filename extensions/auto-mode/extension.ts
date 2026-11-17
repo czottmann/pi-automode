@@ -61,6 +61,7 @@ import {
   restoreState,
   statusLine,
   statusText,
+  classifierStatusLines,
 } from "./state.ts";
 import { loadedContextFromSystemPromptOptions } from "./transcript.ts";
 import type {
@@ -137,12 +138,14 @@ type LogCtx = {
   decisionId: string;
   classifierModel?: string;
   reasoning: ClassifierReasoningLog;
+  classifier?: ClassifyResult["classifier"];
 };
 
 /** Append ccusage-compatible usage and optional classifier I/O entries. */
 function logClassifierIo(decision: ClassifyResult, log: LogCtx): void {
   if (decision.reasoning) log.reasoning = decision.reasoning;
-  if (decision.io) log.reasoning = decision.io.reasoning;
+  else if (decision.io) log.reasoning = decision.io.reasoning;
+  log.classifier = decision.classifier;
   if (!log.logger.enabled || !decision.io) return;
 
   for (const attempt of decision.io.attempts) {
@@ -267,7 +270,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
       if (action === "status") {
         const status = [
           `enabled: ${cfg.enabled ? "yes" : "no"}`,
-          `classifier: ${cfg.classifierModel ?? "current session model"}`,
+          ...classifierStatusLines(cfg, state),
           `classifier reasoning: ${cfg.classifierReasoningLevel ?? "server default"}`,
           `checked actions: ${state.checkedActions}`,
           `blocked actions: ${state.blockedActions}`,
@@ -288,6 +291,10 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
           state: {
             enabledOverride: state.enabledOverride,
             lastDecision: state.lastDecision,
+            lastClassifier: state.lastClassifier && {
+              model: state.lastClassifier.model,
+              failures: state.lastClassifier.failures.map(({ model, kind }) => ({ model, kind })),
+            },
             checkedActions: state.checkedActions,
             blockedActions: state.blockedActions,
             classifierAllowed: state.classifierAllowed,
@@ -359,6 +366,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
           outcome: "block",
           reason: denial.reason,
           classifierModel: logCtx.classifierModel,
+          classifier: logCtx.classifier,
           reasoning: logCtx.reasoning,
         });
       }
@@ -399,6 +407,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
           outcome: "allow",
           reason,
           classifierModel: logCtx.classifierModel,
+          classifier: logCtx.classifier,
           reasoning: logCtx.reasoning,
         });
       }
@@ -752,6 +761,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
         serializeClassifierAction(event.toolName, input),
         loadedContext,
       );
+      state.lastClassifier = decision.classifier;
       logClassifierIo(decision, logCtx);
       if (decision.decision === "allow") {
         state.classifierAllowed += 1;

@@ -10,7 +10,7 @@ The tool accepts one `action` value.
 
 | Action | Purpose | Result |
 | --- | --- | --- |
-| `status` | Inspect active state and counters. | A readable status summary and the enabled override, last decision, and action counters. |
+| `status` | Inspect active state and counters. | A readable summary, the enabled override, last decision, counters, configured classifier order, last-used model, and failed model attempts by category. |
 | `config` | Inspect the effective configuration. | The active configuration, the resolved observability log path, and configuration diagnostics. |
 | `defaults` | Inspect built-in rule lists. | The built-in environment, allow, protected-path, soft-deny, and hard-deny lists. |
 | `denials` | Find recent rejected actions. | Reverse-chronological timestamps, enforcement kinds, and tool names. |
@@ -36,7 +36,7 @@ The tool cannot enable or disable auto mode, reload configuration, reset state, 
 
 Pi sends tool output to the current model. The output has deliberate privacy limits:
 
-- `status` does not include the last decision reason.
+- `status` does not include the last decision reason or raw classifier failure reasons. It reports only the failed model and category (`resolution`, `credentials`, or `request`). Use `/automode status` or local decision logs for failure reasons.
 - `denials` does not include denial reasons or action payloads.
 - `config` removes configuration-parser details from invalid JSON diagnostics.
 

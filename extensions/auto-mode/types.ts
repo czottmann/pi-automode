@@ -39,6 +39,7 @@ export type LogConfig = {
 export type AutoModeSettings = {
   enabled?: boolean;
   classifierModel?: string;
+  classifierFallbackModels?: string[];
   classifierReasoningLevel?: ClassifierReasoningLevel;
   /** When true, read-only tools (read/grep/find/ls) are classified instead of auto-allowed. */
   classifyReadOnlyTools?: boolean;
@@ -90,6 +91,7 @@ export type ToolPattern = {
 export type EffectiveConfig = {
   enabled: boolean;
   classifierModel?: string;
+  classifierFallbackModels: string[];
   classifierReasoningLevel?: ClassifierReasoningLevel;
   classifyReadOnlyTools: boolean;
   fastClassifierMaxTokens: number;
@@ -113,6 +115,7 @@ export type AutoModeState = {
   enabledOverride?: boolean;
   lastDecision?: "allow" | "block";
   lastReason?: string;
+  lastClassifier?: ClassifierRun;
   checkedActions: number;
   blockedActions: number;
   classifierAllowed: number;
@@ -147,8 +150,21 @@ export type ClassificationDecision = {
   reason: string;
 };
 
+/** Model selection and infrastructure failures for one classification. */
+export type ClassifierRun = {
+  /** Last model sent a classification request, absent if none was called. */
+  model?: string;
+  failures: Array<{
+    model: string;
+    kind: "resolution" | "credentials" | "request";
+    reason: string;
+  }>;
+};
+
 /** One classifier attempt: the raw model response (or error) and parsed decision. */
 export type ClassifierIoAttempt = {
+  model?: string;
+  reasoning?: ClassifierReasoning;
   stage: "fast" | "detailed";
   attempt: number;
   response?: {
@@ -186,6 +202,7 @@ export type ClassifierIo = {
 /** Classification decision plus resolved reasoning and the I/O that produced it (when available). */
 export type ClassifyResult = ClassificationDecision & {
   reasoning?: ClassifierReasoningLog;
+  classifier?: ClassifierRun;
   io?: ClassifierIo;
 };
 
