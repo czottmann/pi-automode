@@ -133,7 +133,9 @@ To change a limit, set an integer of at least 32 in a Pi-owned `autoMode` config
 
 `classifierTimeoutMs` limits each classifier request in milliseconds. The fast and detailed stages have separate budgets. The default is 20000.
 
-If a request exceeds its budget, pi-automode aborts the attempt. Then auto mode fails closed and blocks the action.
+If a request exceeds its budget, pi-automode aborts the attempt. If `classifierFallbackModels` has another model, pi-automode tries it from the fast stage. With no fallback left, auto mode fails closed and blocks the action.
+
+The timeout applies to each request, not to the complete fallback chain. Multiple unavailable models can increase the total wait. User cancellation stops classification without fallback.
 
 To change the timeout, set an integer of at least 1000 in a Pi-owned `autoMode` configuration source.
 

@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## New features
+
+- **Classifier fallback models** — Configure `classifierFallbackModels` to try models in order after infrastructure failures. Each action starts with the primary model. Valid decisions, invalid output, and user cancellation do not trigger fallback. Status and local logs report model attempts. (#83)
+
 ## [1.18.0] - 2026-11-11
 
 ## Bug fixes

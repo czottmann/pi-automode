@@ -66,11 +66,17 @@ flowchart TD
 
   N --> O{Exact safe token?}
   O -- yes --> Q[Allow tool]
-  O -- malformed or error --> O1[Block: fail closed]
+  O -- malformed --> O1[Block: fail closed]
+  O -- infrastructure error --> U{Parent cancelled?}
   O -- review --> P[Request classifier_decision tool call]
   P --> P1{Valid allow decision tool call?}
   P1 -- yes --> Q
-  P1 -- no or error --> R[Block with classifier reason]
+  P1 -- block decision or exhausted output retries --> R[Block with classifier reason]
+  P1 -- infrastructure error --> U
+  U -- yes --> X
+  U -- no --> V{Next configured fallback model?}
+  V -- yes --> N
+  V -- no --> R
 
   X --> S[Persist state and update UI]
   F1 --> S
