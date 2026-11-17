@@ -144,6 +144,7 @@ export function createFakeCtx(entries: any[] = [], overrides: Record<string, unk
 export function baseConfig(overrides: Partial<EffectiveConfig> = {}): EffectiveConfig {
 	return {
 		enabled: true,
+		classifierFallbackModels: [],
 		classifyReadOnlyTools: false,
 		allowInsideWorkingDirectory: false,
 		deniedPaths: [],

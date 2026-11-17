@@ -40,7 +40,42 @@ Higher levels can use all 512 or 1200 stage tokens before they produce visible o
 
 `classifierTimeoutMs` limits each classifier request in milliseconds. The default is 20000, and the minimum is 1000. The fast and detailed stages have separate budgets.
 
-If a request stalls or exceeds its budget, pi-automode aborts it. Then auto mode fails closed and blocks the action.
+If a request stalls or exceeds its budget, pi-automode aborts it. With no fallback models, auto mode fails closed and blocks the action.
+
+### Classifier fallback models
+
+`classifierFallbackModels` is an optional ordered array of `provider/model` strings. The default is `[]`. The developer selects the models; pi-automode does not add an implicit fallback.
+
+For example:
+
+```json
+{
+  "autoMode": {
+    "classifierModel": "primary/model",
+    "classifierFallbackModels": ["backup/model-a", "backup/model-b"]
+  }
+}
+```
+
+Each classification starts with `classifierModel`, or the current session model when that field is absent. Pi-automode tries the fallback entries in order only after an infrastructure failure:
+
+- model resolution failure;
+- unavailable credentials or authentication resolution errors;
+- request errors, provider error or aborted responses, or request timeouts.
+
+Infrastructure failures move directly to the next model. They do not add retries against the failed model. Each fallback starts at the fast stage and uses the same policy and action input.
+
+A valid decision is final. Invalid or truncated output keeps the existing behavior: the fast stage blocks immediately; the detailed stage can retry once, then blocks. Output failures and local context-limit checks do not trigger fallback.
+
+User cancellation or an aborted parent `ctx.signal` stops classification. It does not trigger fallback.
+
+If all models fail, the action remains blocked with the last model's failure reason. No fallback remains selected for the next action.
+
+The timeout applies to each request attempt, not to the complete fallback chain. An unavailable primary model adds latency to every action. Multiple unavailable models can increase the total wait.
+
+The array uses replacement precedence: global, then trusted project-local, then `PI_AUTOMODE_SETTINGS_JSON`. An absent field preserves the lower-source list. An empty array clears it. Shared project `.pi/automode.json` cannot set the list.
+
+`/automode status` shows the primary model, fallback order, last-used model, and failed model attempts with reasons. `automode_inspect status` shows models and failure categories, but omits raw provider errors. Local decision logs include the last-used model and failure reasons even when `classifierIo` is off.
 
 `allowInsideWorkingDirectory` adds a deterministic allow tier for the file tools. The default value is `false`. The file tools are `read`, `write`, `edit`, `grep`, `find`, and `ls`.
 
@@ -70,6 +105,7 @@ Example:
 {
   "autoMode": {
     "classifierModel": "provider/model-id",
+    "classifierFallbackModels": [],
     "classifierReasoningLevel": "low",
     "classifyReadOnlyTools": false,
     "fastClassifierMaxTokens": 512,

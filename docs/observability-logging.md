@@ -76,7 +76,8 @@ Pi-automode writes one `decision` entry for each tool-call decision. Each allowe
 | `kind` | enforcement path: `permissions.deny`, `permissions.ask`, `deterministic-hard-deny`, `deterministic-path-deny`, `permissions.allow`, `inside-working-directory`, `classifier`, `read-only`, or `setup` |
 | `outcome` | `allow` or `block` |
 | `reason` | the reason string (classifier reason, or the deterministic/permission reason) |
-| `classifierModel` | the configured classifier model for a classifier-routed decision |
+| `classifierModel` | the configured primary classifier model; absent when the session model is the primary |
+| `classifier` | for classifier-routed decisions: `{ model?, failures }`. `model` is the last model sent a request. Each failure contains `model`, `kind` (`resolution`, `credentials`, or `request`), and `reason`. Present even when `classifierIo` is off. |
 | `reasoning` | classifier reasoning mode and requested or effective level. See the examples below. |
 
 The reasoning field records either server-default mode:
@@ -133,7 +134,9 @@ The entry follows all related classifier-usage `message` entries. It precedes th
 | `durationMs` | total classifier time |
 | `parsed` | the final decision that was acted on (`{ decision, tier, reason }`) |
 
-Each `attempts[]` entry is `{ stage, attempt, response?, parsed?, error?, durationMs }`:
+Each `attempts[]` entry is `{ model?, reasoning?, stage, attempt, response?, parsed?, error?, durationMs }`:
+
+- `model` and `reasoning` — the selected model and its effective reasoning configuration for this request. These fields distinguish attempts across fallback models.
 
 - `stage` — `fast` for the one-token filter or `detailed` for structured review.
 - `response` — `{ stopReason, text, toolCalls?, model, timestamp, usage, errorMessage? }`, including provider-reported errors and aborted requests.
@@ -141,7 +144,9 @@ Each `attempts[]` entry is `{ stage, attempt, response?, parsed?, error?, durati
 - `parsed` — the decision parsed from the response, or absent after a parse failure.
 - `error` — present after a network or authentication error. In this case, `response` is absent.
 
-The array records both stages, retries, and fail-closed cases. A fast allow has one entry. A review with one successful retry has three entries.
+The array records both stages, output retries, and requests to fallback models. Attempt numbers restart for each model and stage. Resolution and credential failures have no request entry; they appear in `decision.classifier.failures`. A fast allow has one entry. A review with one successful retry has three entries.
+
+The top-level `model` and `reasoning` describe the last staged classification. If a later fallback cannot resolve its model or credentials, the decision entry records that failure separately.
 
 ## Privacy
 
@@ -151,7 +156,7 @@ See [Auto-mode classifier flow → What is sent to the classifier](automode-clas
 
 The log records this payload locally. Pi-automode also sends the same data to the classifier endpoint for each classifier-routed call.
 
-If `classifierModel` uses a cloud provider, the payload leaves the machine. Enable `classifierIo` only for classifier diagnosis or rule tuning. Leave it off for routine outcome logging.
+If the primary or a fallback model uses a cloud provider, the payload leaves the machine. Each fallback receives the same policy and action evidence. Enable `classifierIo` only for classifier diagnosis or rule tuning. Leave it off for routine outcome logging.
 
 ## Sizing
 

@@ -4,6 +4,7 @@ import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type {
   ClassifierIo,
+  ClassifierRun,
   ClassifierIoAttempt,
   ClassifierReasoningLog,
   ClassificationDecision,
@@ -23,6 +24,7 @@ export type DecisionLogEntry = {
   outcome: "allow" | "block";
   reason: string;
   classifierModel?: string;
+  classifier?: ClassifierRun;
   reasoning: ClassifierReasoningLog;
 };
 

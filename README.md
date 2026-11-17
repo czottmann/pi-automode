@@ -137,7 +137,9 @@ Pi AI requests schema-constrained sampling with `strict: "prefer"`. Supported pr
 
 Both stages receive the complete current tool input in a dedicated message. Transcript truncation cannot remove action content. If the exact input cannot fit in the classifier context, auto mode blocks the call.
 
-Both stages use a classifier-specific session key. They request short cache retention from providers that support it. A missing model, provider failure, or invalid response blocks the action.
+Both stages use a classifier-specific session key. They request short cache retention from providers that support it. Invalid output blocks the action after the existing output retries, where applicable.
+
+Set `autoMode.classifierFallbackModels` to try an ordered list of replacement models after model resolution, authentication, or request failures. Each action starts with the primary model. Cancellation and valid decisions never trigger fallback. Without a fallback list, infrastructure failures block the action as before. See [Configuration](docs/configuration.md) for the failure conditions and timeout behavior.
 Pi-automode parses Bash structure with `unbash` before permission and deterministic hard-deny checks. The analysis includes nested commands and literal shell-wrapper scripts. A Bash parse error blocks the action.
 
 ## Examples

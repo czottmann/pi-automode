@@ -23,13 +23,30 @@ export function statusLine(
   return `AM ${circle} a:${allowed} d:${state.blockedActions}${classifier}`;
 }
 
+/** Raw provider errors stay in user-visible status and local logs, not inspection. */
+export function classifierStatusLines(
+  config: EffectiveConfig,
+  state: AutoModeState,
+  includeFailureReasons = false,
+): string[] {
+  const failures = state.lastClassifier?.failures ?? [];
+  return [
+    `classifier: ${config.classifierModel ?? "current session model"}`,
+    `classifier fallbacks: ${config.classifierFallbackModels.join(" → ") || "none"}`,
+    `last classifier model: ${state.lastClassifier?.model ?? "none"}`,
+    `last classifier failures: ${failures.length === 0 ? "none" : failures.map(
+      (failure) => `${failure.model} (${includeFailureReasons ? failure.reason : failure.kind})`,
+    ).join(" → ")}`,
+  ];
+}
+
 export function statusText(
   config: EffectiveConfig,
   state: AutoModeState,
 ): string {
   return [
     `enabled: ${(state.enabledOverride ?? config.enabled) ? "yes" : "no"}`,
-    `classifier: ${config.classifierModel ?? "current session model"}`,
+    ...classifierStatusLines(config, state, true),
     `classifier reasoning: ${config.classifierReasoningLevel ?? "server default"}`,
     `checked actions: ${state.checkedActions}`,
     `blocked actions: ${state.blockedActions}`,
@@ -89,6 +106,7 @@ export function restoreState(ctx: ExtensionContext): AutoModeState {
       enabledOverride: entry.data.enabledOverride,
       lastDecision: entry.data.lastDecision,
       lastReason: entry.data.lastReason,
+      lastClassifier: entry.data.lastClassifier,
       checkedActions: entry.data.checkedActions ?? 0,
       blockedActions: entry.data.blockedActions ?? 0,
       classifierAllowed: entry.data.classifierAllowed ?? 0,
