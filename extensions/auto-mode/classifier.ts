@@ -98,10 +98,23 @@ async function resolveClassifier(
     simpleComplete,
   );
   let auth: Awaited<ReturnType<ExtensionContext["modelRegistry"]["getApiKeyAndHeaders"]>>;
+  const signal = ctx.signal;
+  let onAbort: (() => void) | undefined;
   try {
-    auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+    signal?.throwIfAborted();
+    // The registry auth API has no signal parameter. Stop waiting on cancellation;
+    // Promise.race still handles late settlement of the underlying auth lookup.
+    const pending = ctx.modelRegistry.getApiKeyAndHeaders(model);
+    const aborted = signal && new Promise<never>((_resolve, reject) => {
+      onAbort = () => reject(signal.reason ?? new Error("Classifier request cancelled."));
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    });
+    auth = await (aborted ? Promise.race([pending, aborted]) : pending);
   } catch (error) {
     return { reasoning: completionPlan.reasoning, failure: { kind: "credentials", reason: String(error) } };
+  } finally {
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
   }
   if (!auth.ok) {
     return { reasoning: completionPlan.reasoning, failure: { kind: "credentials", reason: "Classifier credentials are unavailable." } };

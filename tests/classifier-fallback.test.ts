@@ -303,3 +303,46 @@ test("deterministic hook decisions do not start fallback classification or erase
   assert.equal(h.calls.length, calls);
   assert.equal(restoreState(ctx as never).lastClassifier?.model, "test/backup");
 });
+
+for (const settleLate of ["resolve", "reject"]) {
+  test(`cancellation releases pending fallback authentication before late ${settleLate}`, async () => {
+    const controller = new AbortController();
+    const authStarted = Promise.withResolvers<void>();
+    const auth = Promise.withResolvers<void>();
+    const h = setup({
+      signal: controller.signal,
+      auth: async (id) => {
+        if (id === "backup") {
+          authStarted.resolve();
+          await auth.promise;
+        }
+      },
+      complete: async () => { throw new Error("primary offline"); },
+    });
+    const pending = h.run();
+    await authStarted.promise;
+    controller.abort(new Error("user cancelled"));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result = await Promise.race([
+        pending,
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error("Cancellation did not release pending authentication")), 100);
+        }),
+      ]);
+      assert.equal(result.decision, "block");
+      assert.match(result.reason, /cancelled/);
+      assert.deepEqual(h.lookups, ["primary", "backup"]);
+      assert.deepEqual(h.calls.map((call) => call.id), ["primary"]);
+    } finally {
+      clearTimeout(timer);
+      if (settleLate === "resolve") auth.resolve();
+      else auth.reject(new Error("late auth failure"));
+      await pending;
+    }
+    // Allow late auth settlement to run; it must not resume classification.
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(h.calls.map((call) => call.id), ["primary"]);
+    assert.deepEqual(h.lookups, ["primary", "backup"]);
+  });
+}
