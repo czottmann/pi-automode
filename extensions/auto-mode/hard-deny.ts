@@ -403,10 +403,9 @@ export function deterministicHardDeny(
     const path = resolveInputPath(cwd, input.path);
     if (!path) return undefined;
     const policyPath = resolvePathForPolicy(path) ?? path;
-    const policyCwd = resolvePathForPolicy(cwd) ?? cwd;
     const profileReason = isProfileOrAuthorizedKeysPath(policyPath);
     if (profileReason) return profileReason;
-    if (isSafetyControlPath(policyPath, policyCwd)) {
+    if (isSafetyControlPath(path, cwd)) {
       return "auto-mode or permission safety-control modification is hard-denied";
     }
   }

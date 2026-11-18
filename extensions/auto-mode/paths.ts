@@ -232,43 +232,45 @@ export function isProtectedPath(
   return false;
 }
 
+function safetyControlPathVariants(path: string): string[] {
+  const absolute = resolve(path);
+  return [absolute, resolvePathForPolicy(absolute) ?? absolute];
+}
+
 export function isSafetyControlPath(path: string, cwd: string): boolean {
-  const policyPath = resolvePathForPolicy(path) ?? resolve(path);
-  const policyCwd = resolvePathForPolicy(cwd) ?? resolve(cwd);
-  const normalized = normalizeProtectedPathForMatch(policyPath);
-  const file = basename(normalized);
   const agentDir = resolve(getAgentDir());
-  const piAgentRoot = normalizeProtectedPathForMatch(
-    resolvePathForPolicy(agentDir) ?? agentDir,
-  );
-  const globalExtensions = `${piAgentRoot}/extensions`;
-  const globalSettings = `${piAgentRoot}/settings`;
-  if (
-    normalized === `${piAgentRoot}/settings.json` ||
-    normalized === globalExtensions ||
-    normalized.startsWith(`${globalExtensions}/`) ||
-    normalized === globalSettings ||
-    normalized.startsWith(`${globalSettings}/`)
-  ) {
-    return true;
-  }
-  if (
-    normalized.endsWith(`/${CONFIG_DIR_NAME}/auto-mode.json`) ||
-    normalized.endsWith("/auto-mode.json")
-  ) {
-    return true;
-  }
-  if (normalized.includes(`/${CONFIG_DIR_NAME}/extensions/`) && file.includes("auto")) {
-    return true;
-  }
-  if (normalized.includes(`/${CONFIG_DIR_NAME}/`) && file.startsWith("automode")) return true;
-  if (
-    normalized.includes("/pi-automode/") ||
-    (isInside(policyPath, policyCwd) && file.includes("auto-mode"))
-  ) {
-    return true;
-  }
-  return false;
+  const globalSettings = safetyControlPathVariants(join(agentDir, "settings.json"))
+    .map(normalizeProtectedPathForMatch);
+  const globalDirectories = ["extensions", "settings"]
+    .flatMap((directory) => safetyControlPathVariants(join(agentDir, directory)))
+    .map(normalizeProtectedPathForMatch);
+  const workingDirectories = safetyControlPathVariants(cwd);
+
+  return safetyControlPathVariants(path).some((candidate) => {
+    const normalized = normalizeProtectedPathForMatch(candidate);
+    const file = basename(normalized);
+    if (
+      globalSettings.includes(normalized) ||
+      globalDirectories.some((directory) =>
+        normalized === directory || normalized.startsWith(`${directory}/`)
+      )
+    ) {
+      return true;
+    }
+    if (
+      normalized.endsWith(`/${CONFIG_DIR_NAME}/auto-mode.json`) ||
+      normalized.endsWith("/auto-mode.json")
+    ) {
+      return true;
+    }
+    if (normalized.includes(`/${CONFIG_DIR_NAME}/extensions/`) && file.includes("auto")) {
+      return true;
+    }
+    if (normalized.includes(`/${CONFIG_DIR_NAME}/`) && file.startsWith("automode")) return true;
+    return normalized.includes("/pi-automode/") ||
+      (workingDirectories.some((directory) => isInside(candidate, directory)) &&
+        file.includes("auto-mode"));
+  });
 }
 
 export function shellPathTokenToPath(
