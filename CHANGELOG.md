@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file.
 ## New features
 
 - **Classifier fallback models** — Configure `classifierFallbackModels` to try models in order after infrastructure failures. Each action starts with the primary model. Valid decisions, invalid output, and user cancellation do not trigger fallback. Status and local logs report model attempts. (#83)
+- **Trusted tool results as classifier evidence** — Add `autoMode.trustedToolResults`. Tools listed there have their results included in the classifier transcript, so user-mediated decisions, such as answers from an ask-user questionnaire, reach the classifier as direct user intent. Entries are tool names, optionally pinned to a source-path glob with `name@glob`; entries that match no registered tool are ignored: resolution fails closed. (#74)
 
 ## [1.18.0] - 2026-11-11
 
