@@ -1255,3 +1255,40 @@ test("validateSettingsFile accepts a valid classifierTimeoutMs", () => {
 	);
 	assert.equal(diagnostics.length, 0);
 });
+
+test("validateSettingsFile rejects a non-string statusFormat", () => {
+	const diagnostics = validateSettingsFile(
+		{ autoMode: { statusFormat: 42 } },
+		"inline",
+	);
+	assert.ok(
+		diagnostics.some((d) => /statusFormat must be a string/.test(d)),
+	);
+});
+
+test("validateSettingsFile rejects an overlong statusFormat", () => {
+	const diagnostics = validateSettingsFile(
+		{ autoMode: { statusFormat: "x".repeat(121) } },
+		"inline",
+	);
+	assert.ok(
+		diagnostics.some((d) => /statusFormat must be a string of at most 120 characters/.test(d)),
+	);
+});
+
+test("statusFormat follows scalar precedence and falls back when invalid", () => {
+	assert.equal(
+		buildEffectiveConfigFromSources({
+			globalSettings: [{ autoMode: { statusFormat: "global {blocked}" } }],
+			projectLocalSettings: [{ autoMode: { statusFormat: "local {blocked}" } }],
+		}).statusFormat,
+		"local {blocked}",
+	);
+	assert.equal(
+		buildEffectiveConfigFromSources({
+			globalSettings: [{ autoMode: { statusFormat: "global {blocked}" } }],
+			projectLocalSettings: [{ autoMode: { statusFormat: 5 } }],
+		}).statusFormat,
+		"global {blocked}",
+	);
+});

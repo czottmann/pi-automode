@@ -77,4 +77,32 @@ test("statusLine: classifier segment shows when only denials have happened", () 
 	assert.equal(statusLine(config, state), "AM ● a:0 d:2 ca:0 cd:2");
 });
 
+test("statusLine: default statusFormat reproduces the built-in layout", () => {
+	const config = baseConfig({ statusFormat: "AM {circle} a:{allowed} d:{blocked}{classifier}" });
+	const state = baseState({ checkedActions: 6, blockedActions: 1, classifierAllowed: 2, classifierDenied: 1 });
+	assert.equal(statusLine(config, state), "AM ● a:5 d:1 ca:2 cd:1");
+});
+
+test("statusLine: custom statusFormat renders the tokens", () => {
+	const config = baseConfig({ statusFormat: "{circle} {allowed}/{blocked} of {checked}" });
+	const state = baseState({ checkedActions: 10, blockedActions: 2 });
+	assert.equal(statusLine(config, state), "● 8/2 of 10");
+});
+
+test("statusLine: classifier tokens render in a custom statusFormat", () => {
+	const config = baseConfig({ statusFormat: "ca:{classifierAllowed} cd:{classifierDenied}" });
+	const state = baseState({ checkedActions: 4, blockedActions: 0, classifierAllowed: 3, classifierDenied: 1 });
+	assert.equal(statusLine(config, state), "ca:3 cd:1");
+});
+
+test("statusLine: unknown statusFormat tokens are left as written", () => {
+	const config = baseConfig({ statusFormat: "{unknown} d:{blocked}" });
+	assert.equal(statusLine(config, baseState({ checkedActions: 3, blockedActions: 0 })), "{unknown} d:0");
+});
+
+test("statusLine: an empty statusFormat renders an empty status", () => {
+	const config = baseConfig({ statusFormat: "" });
+	assert.equal(statusLine(config, baseState()), "");
+});
+
 // --- observability logging -------------------------------------------------
