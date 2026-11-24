@@ -139,7 +139,7 @@ for (const invalid of ["fast", "detailed", "truncated fast", "truncated detailed
     assert.equal(result.decision, "block");
     assert.deepEqual(result.classifier?.failures, []);
     assert.deepEqual(h.lookups, ["primary"]);
-    assert.equal(h.calls.length, fast ? 1 : 3);
+    assert.equal(h.calls.length, invalid === "truncated fast" ? 1 : 3);
   });
 }
 

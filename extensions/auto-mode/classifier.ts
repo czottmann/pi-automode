@@ -834,14 +834,8 @@ export async function classifyInStages(
       reason: "Fast classifier found no policy-relevant risk.",
     };
   }
-  if (fastText !== "1") {
-    return {
-      decision: "block",
-      tier: "none",
-      reason:
-        "Fast classifier response was not 0 or 1 after trimming whitespace; auto mode fails closed.",
-    };
-  }
+  // Any other reply, "1" or prose, goes to the detailed stage: only a bare "0"
+  // allows here, so free text can never allow on its own.
 
   const detailedPrompt: ClassifierCompletionContext = {
     systemPrompt: prompt.systemPrompt,
