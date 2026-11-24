@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file.
 ## New features
 
 - **Classifier fallback models** — Configure `classifierFallbackModels` to try models in order after infrastructure failures. Each action starts with the primary model. Valid decisions, invalid output, and user cancellation do not trigger fallback. Status and local logs report model attempts. (#83)
+- **Model-role aliases for the classifier (OMP)** — `classifierModel` and `classifierFallbackModels` accept an alias such as `@smol`. OMP resolves it on each classification. An alias that resolves to no model counts as an unavailable model.
 
 ## [1.18.0] - 2026-11-11
 

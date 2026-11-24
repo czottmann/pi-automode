@@ -16,7 +16,7 @@ import {
   CLASSIFIER_SYSTEM_PROMPT,
   DEFAULT_FAST_CLASSIFIER_MAX_TOKENS,
 } from "./constants.ts";
-import { formatModelSpec, parseModelSpec } from "./model.ts";
+import { formatModelSpec, isModelRoleAlias, parseModelSpec } from "./model.ts";
 import { buildClassifierTranscript } from "./transcript.ts";
 import type {
   ClassificationDecision,
@@ -69,6 +69,27 @@ export function classifierReasoningForConfig(
     : { mode: "explicit", requestedLevel };
 }
 
+/**
+ * A `provider/model` string resolves through the registry. A role alias such as `@smol`
+ * resolves through the host on every call, so a role change takes effect without a reload.
+ * OMP exposes role resolution at `ctx.models`; Pi's context has no such field.
+ */
+function resolveConfiguredModel(
+  ctx: ExtensionContext,
+  configured: string,
+): Model<any> | undefined {
+  if (isModelRoleAlias(configured)) {
+    const models: unknown = "models" in ctx ? ctx.models : undefined;
+    if (
+      !models || typeof models !== "object" || !("resolve" in models) ||
+      typeof models.resolve !== "function"
+    ) return undefined;
+    return models.resolve(configured);
+  }
+  const parsed = parseModelSpec(configured);
+  return parsed ? ctx.modelRegistry.find(parsed.provider, parsed.id) : undefined;
+}
+
 async function resolveClassifier(
   ctx: ExtensionContext,
   config: EffectiveConfig,
@@ -77,15 +98,15 @@ async function resolveClassifier(
   const reasoning = classifierReasoningForConfig(config.classifierReasoningLevel);
   let model: Model<any> | undefined;
   try {
-    const parsed = configured ? parseModelSpec(configured) : undefined;
-    model = configured
-      ? parsed ? ctx.modelRegistry.find(parsed.provider, parsed.id) : undefined
-      : ctx.model;
+    model = configured ? resolveConfiguredModel(ctx, configured) : ctx.model;
   } catch (error) {
     return { reasoning, failure: { kind: "resolution", reason: String(error) } };
   }
   if (!model) {
-    return { reasoning, failure: { kind: "resolution", reason: "Classifier model is unavailable." } };
+    const reason = configured && isModelRoleAlias(configured)
+      ? `Classifier model role ${configured} did not resolve to a model.`
+      : "Classifier model is unavailable.";
+    return { reasoning, failure: { kind: "resolution", reason } };
   }
 
   const { rawComplete, simpleComplete } = createRegistryCompletionFns(

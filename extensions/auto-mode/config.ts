@@ -28,7 +28,7 @@ import {
   piGlobalSettingsPaths,
   piLegacyGlobalSettingsPath,
 } from "./constants.ts";
-import { parseModelSpec } from "./model.ts";
+import { isModelRoleAlias, parseModelSpec } from "./model.ts";
 import {
   isMalformedToolPattern,
   MAX_WILDCARD_PATTERN_LENGTH,
@@ -314,7 +314,7 @@ export function validateSettingsFile(
         !isValidClassifierFallbackModels(autoMode.classifierFallbackModels)
       ) {
         diagnostics.push(
-          `${source}: autoMode.classifierFallbackModels must be an array of provider/model strings`,
+          `${source}: autoMode.classifierFallbackModels must be an array of provider/model strings or @role aliases`,
         );
       }
       if (
@@ -322,7 +322,7 @@ export function validateSettingsFile(
         !isValidClassifierModel(autoMode.classifierModel)
       ) {
         diagnostics.push(
-          `${source}: autoMode.classifierModel must be a provider/model string`,
+          `${source}: autoMode.classifierModel must be a provider/model string or an @role alias`,
         );
       }
       if (
@@ -601,7 +601,8 @@ export function isClassifierReasoningLevel(
 }
 
 function isValidClassifierModel(value: unknown): value is string {
-  return typeof value === "string" && parseModelSpec(value) !== undefined;
+  return typeof value === "string" &&
+    (isModelRoleAlias(value) || parseModelSpec(value) !== undefined);
 }
 
 function isValidClassifierFallbackModels(value: unknown): value is string[] {

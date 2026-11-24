@@ -32,6 +32,8 @@ This file is project-local. Pi reads it only after project trust. Do not commit 
 
 Set a global default classifier model in `~/.pi/agent/extensions/pi-automode/config.json`. For a trusted project, override it in `.pi/automode.local.json`.
 
+Under OMP, `classifierModel` and `classifierFallbackModels` entries also accept a model-role alias such as `@smol`. OMP resolves the alias on each classification, so a change to the role takes effect without a reload. If the role resolves to no model, or the host has no model roles (Pi), that entry counts as unavailable: pi-automode tries the next fallback, or fails closed.
+
 `classifierReasoningLevel` requests `low`, `medium`, `high`, `xhigh`, or `max` reasoning for both classifier stages. If the key is absent, pi-automode sends no reasoning preference. The server then selects the level.
 
 Pi AI clamps an unsupported value to the nearest level that the selected model supports. A model without reasoning support resolves to `off`. `low` matches the reasoning effort of Codex Auto Review.
