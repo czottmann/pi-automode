@@ -65,7 +65,7 @@ Each classification starts with `classifierModel`, or the current session model 
 
 Infrastructure failures move directly to the next model. They do not add retries against the failed model. Each fallback starts at the fast stage and uses the same policy and action input.
 
-A valid decision is final. Invalid or truncated output keeps the existing behavior: the fast stage blocks immediately; the detailed stage can retry once, then blocks. Output failures and local context-limit checks do not trigger fallback.
+A valid decision is final. A fast-stage reply that is not a bare `0` goes to the detailed stage. Truncated fast-stage output blocks immediately; the detailed stage can retry invalid or truncated output once, then blocks. Output failures and local context-limit checks do not trigger fallback.
 
 User cancellation or an aborted parent `ctx.signal` stops classification. It does not trigger fallback.
 

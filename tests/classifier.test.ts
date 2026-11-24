@@ -1073,8 +1073,11 @@ test("classifyWithRetry omits the timeout when not configured", async () => {
 	assert.equal(Object.hasOwn(calls[0] ?? {}, "timeoutMs"), false);
 });
 
-test("classifyInStages fails closed on malformed fast-stage output", async () => {
-	const { fn, calls } = fakeComplete([assistantWith("0 because safe")]);
+test("classifyInStages sends malformed fast-stage output to detailed review", async () => {
+	const { fn, calls } = fakeComplete([
+		assistantWith("0 because safe"),
+		assistantWithDecision({ decision: "block", tier: "soft_deny", reason: "Pushes to main." }),
+	]);
 	const decision = await classifyInStages(
 		fn,
 		classifierWithContext(),
@@ -1084,8 +1087,8 @@ test("classifyInStages fails closed on malformed fast-stage output", async () =>
 	);
 
 	assert.equal(decision.decision, "block");
-	assert.match(decision.reason, /fast classifier response/i);
-	assert.equal(calls.length, 1);
+	assert.equal(decision.reason, "Pushes to main.");
+	assert.equal(calls.length, 2);
 });
 
 test("classifyInStages accepts surrounding whitespace and logs the fast-stage token verbatim", async () => {

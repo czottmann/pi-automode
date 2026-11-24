@@ -16,7 +16,7 @@ The enforcement flow is the ordered pipeline that runs before each agent tool ca
 
 **Staged classifier** — A two-stage safety classifier. A conservative one-token filter controls access to an optional structured review. See [Fast stage](#enforcement-flow) and [Detailed stage](#enforcement-flow).
 
-**Fast stage** — The first classifier stage. It returns `0` for a clearly allowed action or `1` for an action that can require review.
+**Fast stage** — The first classifier stage. A bare `0` allows a clearly allowed action. Any other reply sends the action to the detailed stage.
 
 **Detailed stage** — The second classifier stage. It runs after a fast-stage review result. It returns one schema-validated `classifier_decision` tool call.
 

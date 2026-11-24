@@ -8,6 +8,10 @@ All notable changes to this project are documented in this file.
 
 - **Classifier fallback models** — Configure `classifierFallbackModels` to try models in order after infrastructure failures. Each action starts with the primary model. Valid decisions, invalid output, and user cancellation do not trigger fallback. Status and local logs report model attempts. (#83)
 
+## Bug fixes
+
+- **Fast-stage replies with prose** — A fast-stage reply that is not a bare `0` or `1` now goes to the detailed stage instead of blocking the action. Only a bare `0` allows, so free text cannot allow on its own.
+
 ## [1.18.0] - 2026-11-11
 
 ## Bug fixes

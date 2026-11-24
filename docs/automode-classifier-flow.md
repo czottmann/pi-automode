@@ -266,7 +266,7 @@ The prompt defines the policy semantics:
 - the classifier cannot invent deny rules or treat the allow-exception list as exhaustive
 - the classifier allows actions that match no hard-deny or soft-deny rule
 
-The fast stage must return exactly `0` for clearly allowed or `1` for review. A `1` response triggers the detailed stage.
+The fast stage is asked to return exactly `0` for clearly allowed or `1` for review. Only a bare `0` allows. Any other response, `1` or free text, triggers the detailed stage.
 
 The detailed request provides one internal `classifier_decision` tool. This tool exists only in the nested classifier context.
 
