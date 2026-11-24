@@ -37,12 +37,17 @@ function setup(options: {
   signal?: AbortSignal;
   fallbacks?: string[];
   timeout?: number;
+  classifierModel?: string;
+  roles?: Record<string, string>;
 } = {}) {
   const calls: Array<{ id: string; stage: string; options: any }> = [];
   const lookups: string[] = [];
   const model = (id: string) => ({ provider: "test", id, api: "test", reasoning: false, contextWindow: 128_000, maxTokens: 32_000 });
   const ctx = createFakeCtx([], {
     model: model("primary"), signal: options.signal,
+    ...(options.roles
+      ? { models: { resolve: (spec: string) => options.roles![spec] ? model(options.roles![spec]) : undefined } }
+      : {}),
     modelRegistry: {
       find(_provider: string, id: string) {
         lookups.push(id);
@@ -59,7 +64,7 @@ function setup(options: {
       },
     },
   });
-  const config = baseConfig({ classifierModel: "test/primary", classifierFallbackModels: options.fallbacks ?? ["test/backup", "test/last"], classifierTimeoutMs: options.timeout ?? 1000 });
+  const config = baseConfig({ classifierModel: options.classifierModel ?? "test/primary", classifierFallbackModels: options.fallbacks ?? ["test/backup", "test/last"], classifierTimeoutMs: options.timeout ?? 1000 });
   const run = () => defaultClassifyAction(ctx as never, config, '{"toolName":"noop","input":{}}', "");
   return { ctx, config, run, calls, lookups };
 }
@@ -166,6 +171,30 @@ test("absent fallback list preserves single-model failure behavior", async () =>
   assert.equal((await h.run()).reason, "Fast classifier failed; auto mode fails closed: offline");
   assert.equal(h.calls.length, 1);
 });
+
+test("a role alias resolves through the host on each action", async () => {
+  const roles = { "@smol": "small" };
+  const h = setup({ classifierModel: "@smol", roles, fallbacks: [] });
+  assert.equal((await h.run()).classifier?.model, "test/small");
+  roles["@smol"] = "smaller";
+  assert.equal((await h.run()).classifier?.model, "test/smaller");
+  assert.deepEqual(h.lookups, []);
+  assert.deepEqual(validateSettingsFile({ autoMode: { classifierModel: "@smol", classifierFallbackModels: ["@slow"] } }, "test"), []);
+});
+
+for (const host of ["has no model roles", "has no such role"]) {
+  test(`a role alias fails closed, then falls back, when the host ${host}`, async () => {
+    const roles = host === "has no such role" ? {} : undefined;
+    const alone = setup({ classifierModel: "@smol", roles, fallbacks: [] });
+    const blocked = await alone.run();
+    assert.equal(blocked.decision, "block");
+    assert.equal(blocked.classifier?.failures[0]?.reason, "Classifier model role @smol did not resolve to a model.");
+    assert.equal(alone.calls.length, 0);
+
+    const backed = setup({ classifierModel: "@smol", roles, fallbacks: ["test/backup"] });
+    assert.equal((await backed.run()).classifier?.model, "test/backup");
+  });
+}
 
 for (const when of ["before", "auth", "fast", "between stages", "detailed retry"]) {
   test(`parent cancellation ${when} stops classification without fallback`, async () => {

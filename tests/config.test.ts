@@ -792,12 +792,12 @@ test("project-local classifier model overrides global classifier model", () => {
 });
 
 test("invalid classifier models produce diagnostics and preserve valid precedence", () => {
-  for (const classifierModel of [42, "invalid", "/model", "provider/"]) {
+  for (const classifierModel of [42, "invalid", "/model", "provider/", "@", "@ smol"]) {
     const diagnostics = validateSettingsFile({
       autoMode: { classifierModel },
     } as any, "test-config");
     assert.deepEqual(diagnostics, [
-      "test-config: autoMode.classifierModel must be a provider/model string",
+      "test-config: autoMode.classifierModel must be a provider/model string or an @role alias",
     ]);
 
     const config = buildEffectiveConfigFromSources({

@@ -8,6 +8,11 @@ export function parseModelSpec(
   return { provider: spec.slice(0, slash), id: spec.slice(slash + 1) };
 }
 
+/** A host model-role alias such as `@smol` (OMP). The host resolves it per call. */
+export function isModelRoleAlias(spec: string): boolean {
+  return /^@[A-Za-z][\w-]*$/.test(spec);
+}
+
 export function formatModelSpec(model: Model<any>): string {
   return `${model.provider}/${model.id}`;
 }
