@@ -167,6 +167,8 @@ export type ClassifierIoAttempt = {
   reasoning?: ClassifierReasoning;
   stage: "fast" | "detailed";
   attempt: number;
+  /** Output-token ceiling sent with this attempt's request. */
+  requestMaxTokens?: number;
   response?: {
     stopReason?: string;
     text: string;
